@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { ExportFormat, HeadshotPreset } from "../types";
+import type { AspectRatio, ExportFormat, HeadshotPreset } from "../types";
 import { cn } from "../lib/utils";
 import { Check, Copy, Download, ExternalLink, Loader2 } from "lucide-react";
 import { getExportUrl } from "../lib/transformations";
@@ -7,6 +7,7 @@ import { getExportUrl } from "../lib/transformations";
 interface ExportActionsProps {
   publicId: string;
   selectedPreset: HeadshotPreset;
+  aspectRatio: AspectRatio;
 }
 
 const FORMATS: { value: ExportFormat; label: string }[] = [
@@ -18,6 +19,7 @@ const FORMATS: { value: ExportFormat; label: string }[] = [
 export default function ExportActions({
   publicId,
   selectedPreset,
+  aspectRatio,
 }: ExportActionsProps) {
   const [format, setFormat] = useState<ExportFormat>("webp");
   const [loading, setLoading] = useState(false);
@@ -25,7 +27,7 @@ export default function ExportActions({
   const [copied, setCopied] = useState(false);
 
   function buildExportUrl(): string {
-    return getExportUrl(publicId, selectedPreset, format);
+    return getExportUrl(publicId, selectedPreset, format, aspectRatio);
   }
 
   async function handleDownload() {
@@ -51,7 +53,8 @@ export default function ExportActions({
       const a = document.createElement("a");
       const objectUrl = URL.createObjectURL(blob);
       a.href = objectUrl;
-      a.download = `headshot-${selectedPreset.id}.${format}`;
+      const ratioLabel = aspectRatio.replace(":", "x");
+      a.download = `headshot-${selectedPreset.id}-${ratioLabel}.${format}`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -92,7 +95,7 @@ export default function ExportActions({
           Export Your Headshot
         </h3>
         <p className="mb-6 text-center text-sm text-white/50">
-          Choose a format and download or share your generated headshot
+          Format: {format.toUpperCase()} · Ratio: {aspectRatio} ({aspectRatio === "1:1" ? "Square Avatar" : "Portrait"})
         </p>
 
         <div className="mb-6 flex justify-center gap-2">
@@ -125,7 +128,7 @@ export default function ExportActions({
             ) : (
               <Download className="h-4 w-4" />
             )}
-            Download
+            Download ({aspectRatio})
           </button>
           <button
             type="button"

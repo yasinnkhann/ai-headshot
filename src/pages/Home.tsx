@@ -91,6 +91,8 @@ export default function Home() {
           originalImage={headshot.originalImage}
           selectedImage={headshot.selectedImage}
           selectedPreset={headshot.selectedPreset}
+          aspectRatio={headshot.aspectRatio}
+          onAspectRatioChange={headshot.setAspectRatio}
         />
       )}
 
@@ -98,6 +100,7 @@ export default function Home() {
         <ExportActions
           publicId={headshot.publicId}
           selectedPreset={headshot.selectedPreset}
+          aspectRatio={headshot.aspectRatio}
         />
       )}
     </div>

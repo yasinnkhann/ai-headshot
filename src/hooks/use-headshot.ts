@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import type { UploadStatus, HeadshotPreset } from "../types";
+import type { UploadStatus, HeadshotPreset, AspectRatio } from "../types";
 import type { CloudinaryUploadResult } from "../cloudinary/UploadWidget";
 import {
   ALL_PRESETS,
@@ -15,6 +15,7 @@ export function useHeadshot() {
   const [publicId, setPublicId] = useState<string | null>(null);
   const [selectedPresetId, setSelectedPresetId] = useState<string | null>(null);
   const [customPreset, setCustomPreset] = useState<HeadshotPreset | null>(null);
+  const [aspectRatio, setAspectRatio] = useState<AspectRatio>("4:5");
 
   const handleUploadStart = () => {
     setUploadStatus("uploading");
@@ -43,6 +44,7 @@ export function useHeadshot() {
     setPublicId(null);
     setSelectedPresetId(null);
     setCustomPreset(null);
+    setAspectRatio("4:5");
     setUploadStatus("idle");
     setUploadError(null);
   };
@@ -56,16 +58,16 @@ export function useHeadshot() {
 
   const originalImage = useMemo(() => {
     if (!publicId) return null;
-    return buildOriginalPreview(publicId);
-  }, [publicId]);
+    return buildOriginalPreview(publicId, aspectRatio);
+  }, [publicId, aspectRatio]);
 
   const presetImages = useMemo(() => {
     if (!publicId) return [];
     return ALL_PRESETS.map((preset) => ({
       preset,
-      image: preset.build(publicId),
+      image: preset.build(publicId, aspectRatio),
     }));
-  }, [publicId]);
+  }, [publicId, aspectRatio]);
 
   const selectedPreset: HeadshotPreset | null = useMemo(() => {
     if (selectedPresetId === "custom-backdrop" && customPreset) {
@@ -76,8 +78,8 @@ export function useHeadshot() {
 
   const selectedImage: CloudinaryImage | null = useMemo(() => {
     if (!publicId || !selectedPreset) return null;
-    return selectedPreset.build(publicId);
-  }, [publicId, selectedPreset]);
+    return selectedPreset.build(publicId, aspectRatio);
+  }, [publicId, selectedPreset, aspectRatio]);
 
   return {
     uploadError,
@@ -88,6 +90,8 @@ export function useHeadshot() {
     resetUpload,
     generateCustomPreset,
     customPreset,
+    aspectRatio,
+    setAspectRatio,
     originalImage,
     presetImages,
     hasUpload: Boolean(publicId),

@@ -6,6 +6,8 @@ export type PresetCategory = "style";
 
 export type ExportFormat = "jpg" | "png" | "webp";
 
+export type AspectRatio = "4:5" | "1:1";
+
 export interface HeadshotPreset {
   id: string;
   name: string;
@@ -13,5 +15,5 @@ export interface HeadshotPreset {
   category: PresetCategory;
   /** Transformation chain for signed export (no public_id) */
   transformationChain: string;
-  build: (publicId: string) => CloudinaryImage;
+  build: (publicId: string, aspectRatio?: AspectRatio) => CloudinaryImage;
 }
