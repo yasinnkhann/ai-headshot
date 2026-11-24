@@ -1,13 +1,26 @@
 import { useState } from "react";
-import type { AspectRatio, ExportFormat, HeadshotPreset } from "../types";
+import type {
+  AspectRatio,
+  ExportFormat,
+  HeadshotPreset,
+  PortraitFilter,
+} from "../types";
 import { cn } from "../lib/utils";
-import { Check, Copy, Download, ExternalLink, Loader2 } from "lucide-react";
+import {
+  Check,
+  Copy,
+  Download,
+  ExternalLink,
+  ImageIcon,
+  Loader2,
+} from "lucide-react";
 import { getExportUrl } from "../lib/transformations";
 
 interface ExportActionsProps {
   publicId: string;
   selectedPreset: HeadshotPreset;
   aspectRatio: AspectRatio;
+  filter?: PortraitFilter;
 }
 
 const FORMATS: { value: ExportFormat; label: string }[] = [
@@ -20,14 +33,16 @@ export default function ExportActions({
   publicId,
   selectedPreset,
   aspectRatio,
+  filter = "none",
 }: ExportActionsProps) {
   const [format, setFormat] = useState<ExportFormat>("webp");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [copiedUrl, setCopiedUrl] = useState(false);
+  const [copiedImage, setCopiedImage] = useState(false);
 
   function buildExportUrl(): string {
-    return getExportUrl(publicId, selectedPreset, format, aspectRatio);
+    return getExportUrl(publicId, selectedPreset, format, aspectRatio, filter);
   }
 
   async function handleDownload() {
@@ -54,13 +69,73 @@ export default function ExportActions({
       const objectUrl = URL.createObjectURL(blob);
       a.href = objectUrl;
       const ratioLabel = aspectRatio.replace(":", "x");
-      a.download = `headshot-${selectedPreset.id}-${ratioLabel}.${format}`;
+      const filterSuffix = filter !== "none" ? `-${filter}` : "";
+      a.download = `headshot-${selectedPreset.id}-${ratioLabel}${filterSuffix}.${format}`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(objectUrl);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Export failed");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleCopyImage() {
+    setLoading(true);
+    setError(null);
+    try {
+      // Request PNG format directly for system clipboard compatibility
+      const url = getExportUrl(publicId, selectedPreset, "png", aspectRatio, filter);
+      let res = await fetch(url);
+
+      let attempts = 0;
+      while (res.status === 423 && attempts < 8) {
+        attempts++;
+        await new Promise((resolve) => setTimeout(resolve, 2500));
+        res = await fetch(url);
+      }
+
+      if (!res.ok) throw new Error("Could not fetch image for clipboard");
+
+      const blob = await res.blob();
+      let pngBlob = blob;
+
+      if (blob.type !== "image/png") {
+        const img = new Image();
+        const objectUrl = URL.createObjectURL(blob);
+        img.src = objectUrl;
+        await new Promise((resolve, reject) => {
+          img.onload = resolve;
+          img.onerror = reject;
+        });
+        const canvas = document.createElement("canvas");
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) throw new Error("Canvas context failed");
+        ctx.drawImage(img, 0, 0);
+        URL.revokeObjectURL(objectUrl);
+        pngBlob = await new Promise<Blob>((resolve, reject) => {
+          canvas.toBlob(
+            (b) => (b ? resolve(b) : reject(new Error("Image conversion failed"))),
+            "image/png",
+          );
+        });
+      }
+
+      await navigator.clipboard.write([
+        new ClipboardItem({ "image/png": pngBlob }),
+      ]);
+      setCopiedImage(true);
+      setTimeout(() => setCopiedImage(false), 2000);
+    } catch (e) {
+      setError(
+        e instanceof Error
+          ? e.message
+          : "Copying image to clipboard is not supported in this browser",
+      );
     } finally {
       setLoading(false);
     }
@@ -81,8 +156,8 @@ export default function ExportActions({
     try {
       const url = buildExportUrl();
       await navigator.clipboard.writeText(url);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      setCopiedUrl(true);
+      setTimeout(() => setCopiedUrl(false), 2000);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Copy failed");
     }
@@ -96,6 +171,7 @@ export default function ExportActions({
         </h3>
         <p className="mb-6 text-center text-sm text-white/50">
           Format: {format.toUpperCase()} · Ratio: {aspectRatio} ({aspectRatio === "1:1" ? "Square Avatar" : "Portrait"})
+          {filter !== "none" && ` · Filter: ${filter}`}
         </p>
 
         <div className="mb-6 flex justify-center gap-2">
@@ -132,6 +208,19 @@ export default function ExportActions({
           </button>
           <button
             type="button"
+            onClick={handleCopyImage}
+            disabled={loading}
+            className="inline-flex items-center gap-2 rounded-xl border border-indigo-500/40 bg-indigo-500/10 px-5 py-2.5 text-sm font-medium text-indigo-300 hover:bg-indigo-500/20 disabled:opacity-60 cursor-pointer transition"
+          >
+            {copiedImage ? (
+              <Check className="h-4 w-4 text-emerald-400" />
+            ) : (
+              <ImageIcon className="h-4 w-4" />
+            )}
+            {copiedImage ? "Copied Image!" : "Copy Image"}
+          </button>
+          <button
+            type="button"
             onClick={handleOpenTab}
             disabled={loading}
             className="inline-flex items-center gap-2 rounded-xl border border-white/20 px-5 py-2.5 text-sm font-medium hover:bg-white/5 disabled:opacity-60 cursor-pointer"
@@ -145,12 +234,12 @@ export default function ExportActions({
             disabled={loading}
             className="inline-flex items-center gap-2 rounded-xl border border-white/20 px-5 py-2.5 text-sm font-medium hover:bg-white/5 disabled:opacity-60 cursor-pointer"
           >
-            {copied ? (
+            {copiedUrl ? (
               <Check className="h-4 w-4 text-green-400" />
             ) : (
               <Copy className="h-4 w-4" />
             )}
-            {copied ? "Copied!" : "Copy URL"}
+            {copiedUrl ? "Copied!" : "Copy URL"}
           </button>
         </div>
 

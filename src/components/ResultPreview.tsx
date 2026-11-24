@@ -1,11 +1,22 @@
 import { useState } from "react";
 import type { CloudinaryImage } from "@cloudinary/url-gen/assets/CloudinaryImage";
-import type { HeadshotPreset, AspectRatio } from "../types";
+import type {
+  HeadshotPreset,
+  AspectRatio,
+  PortraitFilter,
+  GeneratedHeadshotItem,
+} from "../types";
 import { AdvancedImage } from "@cloudinary/react";
 import { AsyncHeadshotImage } from "./AsyncHeadshotImage";
 import { BeforeAfterSlider } from "./BeforeAfterSlider";
 import { LinkedInSimulator } from "./LinkedInSimulator";
-import { ChevronsLeftRight, Columns2, RectangleVertical, Square } from "lucide-react";
+import { PortraitFilterBar } from "./PortraitFilterBar";
+import {
+  ChevronsLeftRight,
+  Columns2,
+  RectangleVertical,
+  Square,
+} from "lucide-react";
 import { cn } from "../lib/utils";
 
 interface ResultPreviewProps {
@@ -14,6 +25,11 @@ interface ResultPreviewProps {
   selectedPreset: HeadshotPreset | null;
   aspectRatio: AspectRatio;
   onAspectRatioChange: (ratio: AspectRatio) => void;
+  activeFilter: PortraitFilter;
+  onFilterChange: (filter: PortraitFilter) => void;
+  onAddToGallery?: (
+    item: Omit<GeneratedHeadshotItem, "id" | "timestamp">,
+  ) => void;
 }
 
 export default function ResultPreview({
@@ -22,6 +38,9 @@ export default function ResultPreview({
   selectedPreset,
   aspectRatio,
   onAspectRatioChange,
+  activeFilter,
+  onFilterChange,
+  onAddToGallery,
 }: ResultPreviewProps) {
   const [viewMode, setViewMode] = useState<"slider" | "side" | "linkedin">("slider");
   const [readyUrls, setReadyUrls] = useState<Set<string>>(() => new Set());
@@ -33,6 +52,15 @@ export default function ResultPreview({
 
   const handleReady = () => {
     setReadyUrls((prev) => new Set(prev).add(currentUrl));
+    if (onAddToGallery && selectedPreset) {
+      onAddToGallery({
+        presetId: selectedPreset.id,
+        presetName: selectedPreset.name,
+        aspectRatio,
+        filter: activeFilter,
+        url: currentUrl,
+      });
+    }
   };
 
   return (
@@ -45,35 +73,44 @@ export default function ResultPreview({
           Style: <span className="font-medium text-indigo-300">{selectedPreset.name}</span> — {selectedPreset.description}
         </p>
 
-        {/* ASPECT RATIO SELECTOR */}
-        <div className="mb-6 flex flex-wrap items-center justify-center gap-2">
-          <span className="text-xs font-medium text-white/50 mr-1">Aspect Ratio:</span>
-          <button
-            type="button"
-            onClick={() => onAspectRatioChange("4:5")}
-            className={cn(
-              "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition cursor-pointer border",
-              aspectRatio === "4:5"
-                ? "border-indigo-500 bg-indigo-600 text-white shadow-md shadow-indigo-600/30"
-                : "border-white/10 bg-white/5 text-white/70 hover:bg-white/10 hover:text-white",
-            )}
-          >
-            <RectangleVertical className="h-3.5 w-3.5" />
-            4:5 Portrait (Resume / Web)
-          </button>
-          <button
-            type="button"
-            onClick={() => onAspectRatioChange("1:1")}
-            className={cn(
-              "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition cursor-pointer border",
-              aspectRatio === "1:1"
-                ? "border-indigo-500 bg-indigo-600 text-white shadow-md shadow-indigo-600/30"
-                : "border-white/10 bg-white/5 text-white/70 hover:bg-white/10 hover:text-white",
-            )}
-          >
-            <Square className="h-3.5 w-3.5" />
-            1:1 Square (Avatar / Social)
-          </button>
+        {/* CONTROLS: ASPECT RATIO & RETOUCH FILTER */}
+        <div className="mb-6 flex flex-col items-center gap-3">
+          {/* Aspect Ratio Selector */}
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            <span className="text-xs font-medium text-white/50 mr-1">Aspect Ratio:</span>
+            <button
+              type="button"
+              onClick={() => onAspectRatioChange("4:5")}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition cursor-pointer border",
+                aspectRatio === "4:5"
+                  ? "border-indigo-500 bg-indigo-600 text-white shadow-md shadow-indigo-600/30"
+                  : "border-white/10 bg-white/5 text-white/70 hover:bg-white/10 hover:text-white",
+              )}
+            >
+              <RectangleVertical className="h-3.5 w-3.5" />
+              4:5 Portrait (Resume / Web)
+            </button>
+            <button
+              type="button"
+              onClick={() => onAspectRatioChange("1:1")}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition cursor-pointer border",
+                aspectRatio === "1:1"
+                  ? "border-indigo-500 bg-indigo-600 text-white shadow-md shadow-indigo-600/30"
+                  : "border-white/10 bg-white/5 text-white/70 hover:bg-white/10 hover:text-white",
+              )}
+            >
+              <Square className="h-3.5 w-3.5" />
+              1:1 Square (Avatar / Social)
+            </button>
+          </div>
+
+          {/* Retouch Filter Bar */}
+          <PortraitFilterBar
+            activeFilter={activeFilter}
+            onFilterChange={onFilterChange}
+          />
         </div>
 
         {/* VIEW MODE SWITCHER (Visible when generation is ready) */}
@@ -165,7 +202,7 @@ export default function ResultPreview({
                 )}
               >
                 <AsyncHeadshotImage
-                  key={`${selectedPreset.id}-${currentUrl}-${aspectRatio}`}
+                  key={`${selectedPreset.id}-${currentUrl}-${aspectRatio}-${activeFilter}`}
                   imageUrl={currentUrl}
                   alt={selectedPreset.name}
                   onReady={handleReady}

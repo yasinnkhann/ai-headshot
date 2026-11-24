@@ -8,6 +8,8 @@ export type ExportFormat = "jpg" | "png" | "webp";
 
 export type AspectRatio = "4:5" | "1:1";
 
+export type PortraitFilter = "none" | "enhance" | "bw" | "warm";
+
 export interface HeadshotPreset {
   id: string;
   name: string;
@@ -15,5 +17,19 @@ export interface HeadshotPreset {
   category: PresetCategory;
   /** Transformation chain for signed export (no public_id) */
   transformationChain: string;
-  build: (publicId: string, aspectRatio?: AspectRatio) => CloudinaryImage;
+  build: (
+    publicId: string,
+    aspectRatio?: AspectRatio,
+    filter?: PortraitFilter,
+  ) => CloudinaryImage;
+}
+
+export interface GeneratedHeadshotItem {
+  id: string;
+  presetId: string;
+  presetName: string;
+  aspectRatio: AspectRatio;
+  filter: PortraitFilter;
+  url: string;
+  timestamp: number;
 }

@@ -4,6 +4,7 @@ import UploadCard from "../components/UploadCard";
 import { useHeadshot } from "../hooks/use-headshot";
 import TransformationGrid from "../components/TransformationGrid";
 import ResultPreview from "../components/ResultPreview";
+import { HeadshotGallery } from "../components/HeadshotGallery";
 import ExportActions from "../components/ExportActions";
 import { RefreshCw } from "lucide-react";
 
@@ -93,6 +94,18 @@ export default function Home() {
           selectedPreset={headshot.selectedPreset}
           aspectRatio={headshot.aspectRatio}
           onAspectRatioChange={headshot.setAspectRatio}
+          activeFilter={headshot.activeFilter}
+          onFilterChange={headshot.setActiveFilter}
+          onAddToGallery={headshot.addToGallery}
+        />
+      )}
+
+      {headshot.hasUpload && (
+        <HeadshotGallery
+          gallery={headshot.gallery}
+          activeUrl={headshot.selectedImage?.toURL()}
+          onSelect={headshot.restoreGalleryItem}
+          onRemove={headshot.removeFromGallery}
         />
       )}
 
@@ -101,6 +114,7 @@ export default function Home() {
           publicId={headshot.publicId}
           selectedPreset={headshot.selectedPreset}
           aspectRatio={headshot.aspectRatio}
+          filter={headshot.activeFilter}
         />
       )}
     </div>

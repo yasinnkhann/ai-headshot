@@ -1,5 +1,11 @@
 import { useMemo, useState } from "react";
-import type { UploadStatus, HeadshotPreset, AspectRatio } from "../types";
+import type {
+  UploadStatus,
+  HeadshotPreset,
+  AspectRatio,
+  PortraitFilter,
+  GeneratedHeadshotItem,
+} from "../types";
 import type { CloudinaryUploadResult } from "../cloudinary/UploadWidget";
 import {
   ALL_PRESETS,
@@ -16,6 +22,8 @@ export function useHeadshot() {
   const [selectedPresetId, setSelectedPresetId] = useState<string | null>(null);
   const [customPreset, setCustomPreset] = useState<HeadshotPreset | null>(null);
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>("4:5");
+  const [activeFilter, setActiveFilter] = useState<PortraitFilter>("none");
+  const [gallery, setGallery] = useState<GeneratedHeadshotItem[]>([]);
 
   const handleUploadStart = () => {
     setUploadStatus("uploading");
@@ -29,7 +37,6 @@ export function useHeadshot() {
       return;
     }
     setPublicId(result.public_id);
-    // Auto-select the first preset so the transformation preview starts
     setSelectedPresetId("corporate-executive");
     setUploadStatus("success");
     setUploadError(null);
@@ -45,6 +52,8 @@ export function useHeadshot() {
     setSelectedPresetId(null);
     setCustomPreset(null);
     setAspectRatio("4:5");
+    setActiveFilter("none");
+    setGallery([]);
     setUploadStatus("idle");
     setUploadError(null);
   };
@@ -56,18 +65,41 @@ export function useHeadshot() {
     setSelectedPresetId("custom-backdrop");
   };
 
+  const addToGallery = (item: Omit<GeneratedHeadshotItem, "id" | "timestamp">) => {
+    setGallery((prev) => {
+      // Avoid duplicate URLs in gallery
+      if (prev.some((g) => g.url === item.url)) return prev;
+      const newItem: GeneratedHeadshotItem = {
+        ...item,
+        id: `headshot-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        timestamp: Date.now(),
+      };
+      return [newItem, ...prev];
+    });
+  };
+
+  const removeFromGallery = (id: string) => {
+    setGallery((prev) => prev.filter((item) => item.id !== id));
+  };
+
+  const restoreGalleryItem = (item: GeneratedHeadshotItem) => {
+    setSelectedPresetId(item.presetId);
+    setAspectRatio(item.aspectRatio);
+    setActiveFilter(item.filter);
+  };
+
   const originalImage = useMemo(() => {
     if (!publicId) return null;
-    return buildOriginalPreview(publicId, aspectRatio);
-  }, [publicId, aspectRatio]);
+    return buildOriginalPreview(publicId, aspectRatio, activeFilter);
+  }, [publicId, aspectRatio, activeFilter]);
 
   const presetImages = useMemo(() => {
     if (!publicId) return [];
     return ALL_PRESETS.map((preset) => ({
       preset,
-      image: preset.build(publicId, aspectRatio),
+      image: preset.build(publicId, aspectRatio, activeFilter),
     }));
-  }, [publicId, aspectRatio]);
+  }, [publicId, aspectRatio, activeFilter]);
 
   const selectedPreset: HeadshotPreset | null = useMemo(() => {
     if (selectedPresetId === "custom-backdrop" && customPreset) {
@@ -78,8 +110,8 @@ export function useHeadshot() {
 
   const selectedImage: CloudinaryImage | null = useMemo(() => {
     if (!publicId || !selectedPreset) return null;
-    return selectedPreset.build(publicId, aspectRatio);
-  }, [publicId, selectedPreset, aspectRatio]);
+    return selectedPreset.build(publicId, aspectRatio, activeFilter);
+  }, [publicId, selectedPreset, aspectRatio, activeFilter]);
 
   return {
     uploadError,
@@ -92,6 +124,12 @@ export function useHeadshot() {
     customPreset,
     aspectRatio,
     setAspectRatio,
+    activeFilter,
+    setActiveFilter,
+    gallery,
+    addToGallery,
+    removeFromGallery,
+    restoreGalleryItem,
     originalImage,
     presetImages,
     hasUpload: Boolean(publicId),
