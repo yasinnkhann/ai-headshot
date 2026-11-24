@@ -4,6 +4,7 @@ import type {
   ExportFormat,
   HeadshotPreset,
   PortraitFilter,
+  WardrobeId,
 } from "../types";
 import { cn } from "../lib/utils";
 import {
@@ -21,6 +22,7 @@ interface ExportActionsProps {
   selectedPreset: HeadshotPreset;
   aspectRatio: AspectRatio;
   filter?: PortraitFilter;
+  wardrobe?: WardrobeId;
 }
 
 const FORMATS: { value: ExportFormat; label: string }[] = [
@@ -34,6 +36,7 @@ export default function ExportActions({
   selectedPreset,
   aspectRatio,
   filter = "none",
+  wardrobe = "original",
 }: ExportActionsProps) {
   const [format, setFormat] = useState<ExportFormat>("webp");
   const [loading, setLoading] = useState(false);
@@ -42,7 +45,14 @@ export default function ExportActions({
   const [copiedImage, setCopiedImage] = useState(false);
 
   function buildExportUrl(): string {
-    return getExportUrl(publicId, selectedPreset, format, aspectRatio, filter);
+    return getExportUrl(
+      publicId,
+      selectedPreset,
+      format,
+      aspectRatio,
+      filter,
+      wardrobe,
+    );
   }
 
   async function handleDownload() {
@@ -52,9 +62,9 @@ export default function ExportActions({
       const url = buildExportUrl();
       let res = await fetch(url);
 
-      // If Cloudinary is still deriving the target format (423), poll briefly
+      // If Cloudinary is still deriving the target format (423), poll with backoff
       let attempts = 0;
-      while (res.status === 423 && attempts < 8) {
+      while (res.status === 423 && attempts < 16) {
         attempts++;
         await new Promise((resolve) => setTimeout(resolve, 2500));
         res = await fetch(url);
@@ -69,8 +79,9 @@ export default function ExportActions({
       const objectUrl = URL.createObjectURL(blob);
       a.href = objectUrl;
       const ratioLabel = aspectRatio.replace(":", "x");
+      const wardrobeSuffix = wardrobe !== "original" ? `-${wardrobe}` : "";
       const filterSuffix = filter !== "none" ? `-${filter}` : "";
-      a.download = `headshot-${selectedPreset.id}-${ratioLabel}${filterSuffix}.${format}`;
+      a.download = `headshot-${selectedPreset.id}-${ratioLabel}${wardrobeSuffix}${filterSuffix}.${format}`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -87,11 +98,18 @@ export default function ExportActions({
     setError(null);
     try {
       // Request PNG format directly for system clipboard compatibility
-      const url = getExportUrl(publicId, selectedPreset, "png", aspectRatio, filter);
+      const url = getExportUrl(
+        publicId,
+        selectedPreset,
+        "png",
+        aspectRatio,
+        filter,
+        wardrobe,
+      );
       let res = await fetch(url);
 
       let attempts = 0;
-      while (res.status === 423 && attempts < 8) {
+      while (res.status === 423 && attempts < 16) {
         attempts++;
         await new Promise((resolve) => setTimeout(resolve, 2500));
         res = await fetch(url);
@@ -171,6 +189,7 @@ export default function ExportActions({
         </h3>
         <p className="mb-6 text-center text-sm text-white/50">
           Format: {format.toUpperCase()} · Ratio: {aspectRatio} ({aspectRatio === "1:1" ? "Square Avatar" : "Portrait"})
+          {wardrobe !== "original" && ` · Attire: ${wardrobe}`}
           {filter !== "none" && ` · Filter: ${filter}`}
         </p>
 

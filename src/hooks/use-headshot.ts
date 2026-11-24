@@ -4,6 +4,7 @@ import type {
   HeadshotPreset,
   AspectRatio,
   PortraitFilter,
+  WardrobeId,
   GeneratedHeadshotItem,
 } from "../types";
 import type { CloudinaryUploadResult } from "../cloudinary/UploadWidget";
@@ -23,6 +24,7 @@ export function useHeadshot() {
   const [customPreset, setCustomPreset] = useState<HeadshotPreset | null>(null);
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>("4:5");
   const [activeFilter, setActiveFilter] = useState<PortraitFilter>("none");
+  const [activeWardrobe, setActiveWardrobe] = useState<WardrobeId>("original");
   const [gallery, setGallery] = useState<GeneratedHeadshotItem[]>([]);
 
   const handleUploadStart = () => {
@@ -53,6 +55,7 @@ export function useHeadshot() {
     setCustomPreset(null);
     setAspectRatio("4:5");
     setActiveFilter("none");
+    setActiveWardrobe("original");
     setGallery([]);
     setUploadStatus("idle");
     setUploadError(null);
@@ -86,6 +89,9 @@ export function useHeadshot() {
     setSelectedPresetId(item.presetId);
     setAspectRatio(item.aspectRatio);
     setActiveFilter(item.filter);
+    if (item.wardrobe) {
+      setActiveWardrobe(item.wardrobe);
+    }
   };
 
   const originalImage = useMemo(() => {
@@ -97,9 +103,9 @@ export function useHeadshot() {
     if (!publicId) return [];
     return ALL_PRESETS.map((preset) => ({
       preset,
-      image: preset.build(publicId, aspectRatio, activeFilter),
+      image: preset.build(publicId, aspectRatio, activeFilter, activeWardrobe),
     }));
-  }, [publicId, aspectRatio, activeFilter]);
+  }, [publicId, aspectRatio, activeFilter, activeWardrobe]);
 
   const selectedPreset: HeadshotPreset | null = useMemo(() => {
     if (selectedPresetId === "custom-backdrop" && customPreset) {
@@ -110,8 +116,8 @@ export function useHeadshot() {
 
   const selectedImage: CloudinaryImage | null = useMemo(() => {
     if (!publicId || !selectedPreset) return null;
-    return selectedPreset.build(publicId, aspectRatio, activeFilter);
-  }, [publicId, selectedPreset, aspectRatio, activeFilter]);
+    return selectedPreset.build(publicId, aspectRatio, activeFilter, activeWardrobe);
+  }, [publicId, selectedPreset, aspectRatio, activeFilter, activeWardrobe]);
 
   return {
     uploadError,
@@ -126,6 +132,8 @@ export function useHeadshot() {
     setAspectRatio,
     activeFilter,
     setActiveFilter,
+    activeWardrobe,
+    setActiveWardrobe,
     gallery,
     addToGallery,
     removeFromGallery,

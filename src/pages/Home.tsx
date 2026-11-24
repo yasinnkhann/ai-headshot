@@ -3,6 +3,7 @@ import { Hero } from "../components/Hero";
 import UploadCard from "../components/UploadCard";
 import { useHeadshot } from "../hooks/use-headshot";
 import TransformationGrid from "../components/TransformationGrid";
+import { WardrobeStudio } from "../components/WardrobeStudio";
 import ResultPreview from "../components/ResultPreview";
 import { HeadshotGallery } from "../components/HeadshotGallery";
 import ExportActions from "../components/ExportActions";
@@ -88,6 +89,13 @@ export default function Home() {
       )}
 
       {headshot.hasUpload && (
+        <WardrobeStudio
+          activeWardrobe={headshot.activeWardrobe}
+          onWardrobeChange={headshot.setActiveWardrobe}
+        />
+      )}
+
+      {headshot.hasUpload && (
         <ResultPreview
           originalImage={headshot.originalImage}
           selectedImage={headshot.selectedImage}
@@ -96,6 +104,7 @@ export default function Home() {
           onAspectRatioChange={headshot.setAspectRatio}
           activeFilter={headshot.activeFilter}
           onFilterChange={headshot.setActiveFilter}
+          activeWardrobe={headshot.activeWardrobe}
           onAddToGallery={headshot.addToGallery}
         />
       )}
@@ -115,6 +124,7 @@ export default function Home() {
           selectedPreset={headshot.selectedPreset}
           aspectRatio={headshot.aspectRatio}
           filter={headshot.activeFilter}
+          wardrobe={headshot.activeWardrobe}
         />
       )}
     </div>

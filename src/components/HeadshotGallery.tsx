@@ -1,4 +1,5 @@
 import type { GeneratedHeadshotItem } from "../types";
+import { getWardrobeById } from "../lib/transformations";
 import { Sparkles, Trash2, Check } from "lucide-react";
 import { cn } from "../lib/utils";
 
@@ -96,8 +97,9 @@ export function HeadshotGallery({
                     <p className="text-xs font-medium text-white truncate">
                       {item.presetName}
                     </p>
-                    <p className="text-[10px] text-white/60">
+                    <p className="text-[10px] text-white/60 truncate">
                       {item.aspectRatio}
+                      {item.wardrobe && item.wardrobe !== "original" && ` · ${getWardrobeById(item.wardrobe)?.label}`}
                       {item.filter !== "none" && ` · ${item.filter}`}
                     </p>
                   </div>

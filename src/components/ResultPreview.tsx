@@ -4,6 +4,7 @@ import type {
   HeadshotPreset,
   AspectRatio,
   PortraitFilter,
+  WardrobeId,
   GeneratedHeadshotItem,
 } from "../types";
 import { AdvancedImage } from "@cloudinary/react";
@@ -11,6 +12,7 @@ import { AsyncHeadshotImage } from "./AsyncHeadshotImage";
 import { BeforeAfterSlider } from "./BeforeAfterSlider";
 import { LinkedInSimulator } from "./LinkedInSimulator";
 import { PortraitFilterBar } from "./PortraitFilterBar";
+import { getWardrobeById } from "../lib/transformations";
 import {
   ChevronsLeftRight,
   Columns2,
@@ -27,6 +29,7 @@ interface ResultPreviewProps {
   onAspectRatioChange: (ratio: AspectRatio) => void;
   activeFilter: PortraitFilter;
   onFilterChange: (filter: PortraitFilter) => void;
+  activeWardrobe?: WardrobeId;
   onAddToGallery?: (
     item: Omit<GeneratedHeadshotItem, "id" | "timestamp">,
   ) => void;
@@ -40,6 +43,7 @@ export default function ResultPreview({
   onAspectRatioChange,
   activeFilter,
   onFilterChange,
+  activeWardrobe = "original",
   onAddToGallery,
 }: ResultPreviewProps) {
   const [viewMode, setViewMode] = useState<"slider" | "side" | "linkedin">("slider");
@@ -49,6 +53,7 @@ export default function ResultPreview({
 
   const currentUrl = selectedImage.toURL();
   const isReady = readyUrls.has(currentUrl);
+  const wardrobeLabel = getWardrobeById(activeWardrobe)?.label || "Original";
 
   const handleReady = () => {
     setReadyUrls((prev) => new Set(prev).add(currentUrl));
@@ -58,6 +63,7 @@ export default function ResultPreview({
         presetName: selectedPreset.name,
         aspectRatio,
         filter: activeFilter,
+        wardrobe: activeWardrobe,
         url: currentUrl,
       });
     }
@@ -70,7 +76,13 @@ export default function ResultPreview({
           Your AI Generated Headshot
         </h2>
         <p className="mb-6 text-center text-white/60">
-          Style: <span className="font-medium text-indigo-300">{selectedPreset.name}</span> — {selectedPreset.description}
+          Style: <span className="font-medium text-indigo-300">{selectedPreset.name}</span>
+          {activeWardrobe !== "original" && (
+            <>
+              {" "}· Attire: <span className="font-medium text-indigo-300">{wardrobeLabel}</span>
+            </>
+          )}
+          {" "}— {selectedPreset.description}
         </p>
 
         {/* CONTROLS: ASPECT RATIO & RETOUCH FILTER */}
@@ -202,7 +214,7 @@ export default function ResultPreview({
                 )}
               >
                 <AsyncHeadshotImage
-                  key={`${selectedPreset.id}-${currentUrl}-${aspectRatio}-${activeFilter}`}
+                  key={`${selectedPreset.id}-${currentUrl}-${aspectRatio}-${activeFilter}-${activeWardrobe}`}
                   imageUrl={currentUrl}
                   alt={selectedPreset.name}
                   onReady={handleReady}

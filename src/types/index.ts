@@ -10,6 +10,22 @@ export type AspectRatio = "4:5" | "1:1";
 
 export type PortraitFilter = "none" | "enhance" | "bw" | "warm";
 
+export type WardrobeId =
+  | "original"
+  | "charcoal-blazer"
+  | "navy-suit"
+  | "black-turtleneck"
+  | "linen-shirt"
+  | "white-coat";
+
+export interface WardrobeOption {
+  id: WardrobeId;
+  label: string;
+  tagline: string;
+  category: "Original" | "Executive" | "Formal" | "Tech" | "Smart Casual" | "Clinical";
+  prompt?: string;
+}
+
 export interface HeadshotPreset {
   id: string;
   name: string;
@@ -21,6 +37,7 @@ export interface HeadshotPreset {
     publicId: string,
     aspectRatio?: AspectRatio,
     filter?: PortraitFilter,
+    wardrobe?: WardrobeId,
   ) => CloudinaryImage;
 }
 
@@ -30,6 +47,7 @@ export interface GeneratedHeadshotItem {
   presetName: string;
   aspectRatio: AspectRatio;
   filter: PortraitFilter;
+  wardrobe?: WardrobeId;
   url: string;
   timestamp: number;
 }
