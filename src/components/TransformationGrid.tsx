@@ -3,6 +3,7 @@ import type { HeadshotPreset } from "../types";
 import { AdvancedImage, lazyload, placeholder } from "@cloudinary/react";
 import { cn } from "../lib/utils";
 import { Check, Sparkles, Building2, Trees, Landmark, UserCheck } from "lucide-react";
+import { CustomBackdropStudio } from "./CustomBackdropStudio";
 
 interface PresetImage {
   preset: HeadshotPreset;
@@ -15,6 +16,8 @@ interface TransformationGridProps {
   originalImage: CloudinaryImage | null;
   selectedPresetId: string | null;
   onSelect: (id: string) => void;
+  onGenerateCustom?: (prompt: string) => void;
+  customPreset?: HeadshotPreset | null;
 }
 
 const PRESET_ICONS: Record<string, typeof Sparkles> = {
@@ -116,17 +119,22 @@ export default function TransformationGrid({
   originalImage,
   onSelect,
   selectedPresetId,
+  onGenerateCustom,
+  customPreset,
 }: TransformationGridProps) {
   if (presets.length === 0) return null;
 
   return (
     <section id="styles-grid" className="px-4 py-12">
-      <div className="mx-auto max-w-6xl">
-        <h2 className="mb-2 text-center text-2xl font-semibold">{title}</h2>
-        <p className="mb-8 text-center text-sm text-white/60">
-          Select a style below to generate your professional AI headshot
-        </p>
+      <div className="mx-auto max-w-6xl space-y-8">
+        <div>
+          <h2 className="mb-2 text-center text-2xl font-semibold">{title}</h2>
+          <p className="text-center text-sm text-white/60">
+            Select a curated style or describe a custom backdrop below
+          </p>
+        </div>
 
+        {/* CURATED PRESET STYLES */}
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
           {presets.map(({ preset }) => (
             <PresetCard
@@ -143,6 +151,20 @@ export default function TransformationGrid({
             />
           ))}
         </div>
+
+        {/* CUSTOM BACKDROP PROMPT STUDIO */}
+        {onGenerateCustom && (
+          <CustomBackdropStudio
+            onGenerate={(prompt) => {
+              onGenerateCustom(prompt);
+              setTimeout(() => {
+                document.getElementById("result-preview")?.scrollIntoView({ behavior: "smooth" });
+              }, 100);
+            }}
+            isActive={selectedPresetId === "custom-backdrop"}
+            activePrompt={customPreset?.description}
+          />
+        )}
       </div>
     </section>
   );

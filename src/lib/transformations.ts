@@ -106,6 +106,23 @@ export function buildOriginalPreview(publicId: string): CloudinaryImage {
     .delivery(quality(autoQuality()));
 }
 
+export function buildCustomPreset(prompt: string): HeadshotPreset {
+  const sanitizedPrompt = prompt.trim();
+  return {
+    id: "custom-backdrop",
+    name: "Custom Setting",
+    description: sanitizedPrompt,
+    category: "style",
+    transformationChain: `e_gen_background_replace:prompt_${encodeURIComponent(sanitizedPrompt)}/c_fill,w_600,h_750,g_auto/f_auto/q_auto`,
+    build: (publicId: string) =>
+      finalizeImage(
+        cld
+          .image(publicId)
+          .effect(generativeBackgroundReplace().prompt(sanitizedPrompt)),
+      ),
+  };
+}
+
 export function getPresetById(id: string): HeadshotPreset | undefined {
   return ALL_PRESETS.find((p) => p.id === id);
 }

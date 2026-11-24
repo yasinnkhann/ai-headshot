@@ -61,6 +61,21 @@ export default function UploadCard({
 
   const isUploading = uploadStatus === "uploading";
 
+  const handleUseSample = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onUploadSuccess({
+      public_id: "samples/people/smiling-man",
+      resource_type: "image",
+      secure_url: "https://res.cloudinary.com/dwbhfydeg/image/upload/samples/people/smiling-man.jpg",
+      url: "http://res.cloudinary.com/dwbhfydeg/image/upload/samples/people/smiling-man.jpg",
+      width: 849,
+      height: 565,
+      format: "jpg",
+      bytes: 338794,
+      created_at: new Date().toISOString(),
+    });
+  };
+
   return (
     <section id="upload" className="px-4 py-12">
       <div className="mx-auto max-w-2xl">
@@ -110,21 +125,27 @@ export default function UploadCard({
           )}
 
           {!isUploading && (
-            <div
-              className="flex items-center gap-3"
-              onClick={(e) => {
-                e.stopPropagation();
-                open();
-              }}
-            >
+            <div className="flex flex-col items-center gap-3">
               <button
                 type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  open();
+                }}
                 className={cn(
                   "inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-6 py-3 font-medium text-white cursor-pointer",
                   "transition hover:bg-indigo-500",
                 )}
               >
                 Browse files
+              </button>
+
+              <button
+                type="button"
+                onClick={handleUseSample}
+                className="text-xs text-indigo-400 hover:text-indigo-300 underline underline-offset-4 transition cursor-pointer"
+              >
+                Or try with a sample selfie
               </button>
             </div>
           )}

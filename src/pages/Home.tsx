@@ -81,6 +81,8 @@ export default function Home() {
           originalImage={headshot.originalImage}
           selectedPresetId={headshot.selectedPresetId}
           onSelect={headshot.selectPreset}
+          onGenerateCustom={headshot.generateCustomPreset}
+          customPreset={headshot.customPreset}
         />
       )}
 

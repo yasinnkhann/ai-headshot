@@ -1,8 +1,9 @@
 import { useMemo, useState } from "react";
-import type { UploadStatus } from "../types";
+import type { UploadStatus, HeadshotPreset } from "../types";
 import type { CloudinaryUploadResult } from "../cloudinary/UploadWidget";
 import {
   ALL_PRESETS,
+  buildCustomPreset,
   buildOriginalPreview,
   getPresetById,
 } from "../lib/transformations";
@@ -13,6 +14,7 @@ export function useHeadshot() {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [publicId, setPublicId] = useState<string | null>(null);
   const [selectedPresetId, setSelectedPresetId] = useState<string | null>(null);
+  const [customPreset, setCustomPreset] = useState<HeadshotPreset | null>(null);
 
   const handleUploadStart = () => {
     setUploadStatus("uploading");
@@ -40,8 +42,16 @@ export function useHeadshot() {
   const resetUpload = () => {
     setPublicId(null);
     setSelectedPresetId(null);
+    setCustomPreset(null);
     setUploadStatus("idle");
     setUploadError(null);
+  };
+
+  const generateCustomPreset = (prompt: string) => {
+    if (!prompt.trim() || !publicId) return;
+    const preset = buildCustomPreset(prompt);
+    setCustomPreset(preset);
+    setSelectedPresetId("custom-backdrop");
   };
 
   const originalImage = useMemo(() => {
@@ -57,9 +67,12 @@ export function useHeadshot() {
     }));
   }, [publicId]);
 
-  const selectedPreset = selectedPresetId
-    ? (getPresetById(selectedPresetId) ?? null)
-    : null;
+  const selectedPreset: HeadshotPreset | null = useMemo(() => {
+    if (selectedPresetId === "custom-backdrop" && customPreset) {
+      return customPreset;
+    }
+    return selectedPresetId ? (getPresetById(selectedPresetId) ?? null) : null;
+  }, [selectedPresetId, customPreset]);
 
   const selectedImage: CloudinaryImage | null = useMemo(() => {
     if (!publicId || !selectedPreset) return null;
@@ -73,6 +86,8 @@ export function useHeadshot() {
     handleUploadStart,
     handleUploadSuccess,
     resetUpload,
+    generateCustomPreset,
+    customPreset,
     originalImage,
     presetImages,
     hasUpload: Boolean(publicId),
