@@ -18,6 +18,8 @@ interface UploadCardProps {
   onUploadError: (error: Error) => void;
   onUploadStart: () => void;
   onUploadSuccess: (result: CloudinaryUploadResult) => void;
+  onUseSample?: () => void;
+  compact?: boolean;
 }
 
 export default function UploadCard({
@@ -26,6 +28,8 @@ export default function UploadCard({
   onUploadError,
   onUploadStart,
   onUploadSuccess,
+  onUseSample,
+  compact = false,
 }: UploadCardProps) {
   const [progress, setProgress] = useState(0);
 
@@ -63,6 +67,10 @@ export default function UploadCard({
 
   const handleUseSample = (e: React.MouseEvent) => {
     e.stopPropagation();
+    if (onUseSample) {
+      onUseSample();
+      return;
+    }
     onUploadSuccess({
       public_id: "samples/people/smiling-man",
       resource_type: "image",
@@ -76,6 +84,85 @@ export default function UploadCard({
     });
   };
 
+  const dropzoneContent = (
+    <div
+      {...getRootProps()}
+      className={cn(
+        "glass-card relative flex cursor-pointer flex-col items-center gap-5 p-8 transition border border-white/10 hover:border-indigo-500/40 hover:bg-white/[0.07]",
+        isDragActive && "border-indigo-500 bg-indigo-500/10",
+        isUploading && "pointer-events-none opacity-80",
+        compact ? "rounded-2xl" : "p-10",
+      )}
+    >
+      <input {...getInputProps()} />
+      <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-indigo-500/20 text-indigo-400">
+        {isUploading ? (
+          <Loader2 className="h-8 w-8 animate-spin" />
+        ) : (
+          <ImageIcon className="h-8 w-8" />
+        )}
+      </div>
+
+      <div className="text-center">
+        <p className="text-base font-semibold text-white">Drag & drop your selfie</p>
+        <p className="mt-1 text-xs text-white/50">
+          or click to browse · JPG, PNG, or WEBP (up to 10MB)
+        </p>
+      </div>
+
+      {isUploading && (
+        <div className="w-full max-w-xs space-y-2">
+          <div className="h-2 w-full overflow-hidden rounded-full bg-white/10">
+            <div
+              className="h-full bg-indigo-500 transition-all duration-300"
+              style={{ width: `${Math.max(progress, 5)}%` }}
+            />
+          </div>
+          <p className="text-center text-xs text-white/60">
+            Uploading... {progress > 0 ? `${progress}%` : ""}
+          </p>
+        </div>
+      )}
+
+      {!isUploading && (
+        <div className="flex flex-col sm:flex-row items-center gap-3">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              open();
+            }}
+            className={cn(
+              "inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-6 py-2.5 text-sm font-semibold text-white cursor-pointer shadow-lg shadow-indigo-600/20",
+              "transition hover:bg-indigo-500",
+            )}
+          >
+            Browse files
+          </button>
+
+          <button
+            type="button"
+            onClick={handleUseSample}
+            className="text-xs text-indigo-400 hover:text-indigo-300 underline underline-offset-4 transition cursor-pointer"
+          >
+            ⚡ Try sample selfie
+          </button>
+        </div>
+      )}
+
+      {uploadError && (
+        <div className="flex items-center gap-2 rounded-lg bg-red-500/10 px-4 py-2 text-xs text-red-400">
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          {uploadError}
+        </div>
+      )}
+    </div>
+  );
+
+  if (compact) {
+    return dropzoneContent;
+  }
+
   return (
     <section id="upload" className="px-4 py-12">
       <div className="mx-auto max-w-2xl">
@@ -85,78 +172,7 @@ export default function UploadCard({
         <p className="mb-8 text-center text-white/60">
           Drag, drop, or click to upload your photo
         </p>
-
-        <div
-          {...getRootProps()}
-          className={cn(
-            "glass-card relative flex cursor-pointer flex-col items-center gap-6 p-10 transition border border-white/10 hover:border-indigo-500/40",
-            isDragActive && "border-indigo-500 bg-indigo-500/10",
-            isUploading && "pointer-events-none opacity-80",
-          )}
-        >
-          <input {...getInputProps()} />
-          <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-indigo-500/20 text-indigo-400">
-            {isUploading ? (
-              <Loader2 className="h-10 w-10 animate-spin" />
-            ) : (
-              <ImageIcon className="h-10 w-10" />
-            )}
-          </div>
-
-          <div className="text-center">
-            <p className="text-lg font-medium">Drag & drop your selfie</p>
-            <p className="mt-1 text-sm text-white/50">
-              or click to browse · JPG, PNG, or WEBP
-            </p>
-          </div>
-
-          {isUploading && (
-            <div className="w-full max-w-xs space-y-2">
-              <div className="h-2 w-full overflow-hidden rounded-full bg-white/10">
-                <div
-                  className="h-full bg-indigo-500 transition-all duration-300"
-                  style={{ width: `${Math.max(progress, 5)}%` }}
-                />
-              </div>
-              <p className="text-center text-xs text-white/60">
-                Uploading... {progress > 0 ? `${progress}%` : ""}
-              </p>
-            </div>
-          )}
-
-          {!isUploading && (
-            <div className="flex flex-col items-center gap-3">
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  open();
-                }}
-                className={cn(
-                  "inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-6 py-3 font-medium text-white cursor-pointer",
-                  "transition hover:bg-indigo-500",
-                )}
-              >
-                Browse files
-              </button>
-
-              <button
-                type="button"
-                onClick={handleUseSample}
-                className="text-xs text-indigo-400 hover:text-indigo-300 underline underline-offset-4 transition cursor-pointer"
-              >
-                Or try with a sample selfie
-              </button>
-            </div>
-          )}
-
-          {uploadError && (
-            <div className="flex items-center gap-2 rounded-lg bg-red-500/10 px-4 py-2 text-sm text-red-400">
-              <AlertCircle className="h-4 w-4 shrink-0" />
-              {uploadError}
-            </div>
-          )}
-        </div>
+        {dropzoneContent}
       </div>
     </section>
   );
