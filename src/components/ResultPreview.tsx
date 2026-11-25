@@ -6,13 +6,16 @@ import type {
   PortraitFilter,
   WardrobeId,
   GeneratedHeadshotItem,
+  MicroTuningSettings,
 } from "../types";
 import { AdvancedImage } from "@cloudinary/react";
 import { AsyncHeadshotImage } from "./AsyncHeadshotImage";
 import { BeforeAfterSlider } from "./BeforeAfterSlider";
 import { LinkedInSimulator } from "./LinkedInSimulator";
 import { PortraitFilterBar } from "./PortraitFilterBar";
+import { MicroTuningPanel } from "./MicroTuningPanel";
 import { getWardrobeById } from "../lib/transformations";
+import { getMicroTuningCssFilter, getVignetteOverlayStyle } from "../lib/micro-tuning";
 import {
   ChevronsLeftRight,
   Columns2,
@@ -30,6 +33,8 @@ interface ResultPreviewProps {
   activeFilter: PortraitFilter;
   onFilterChange: (filter: PortraitFilter) => void;
   activeWardrobe?: WardrobeId;
+  microTuning: MicroTuningSettings;
+  onMicroTuningChange: (settings: MicroTuningSettings) => void;
   onAddToGallery?: (
     item: Omit<GeneratedHeadshotItem, "id" | "timestamp">,
   ) => void;
@@ -44,6 +49,8 @@ export default function ResultPreview({
   activeFilter,
   onFilterChange,
   activeWardrobe = "original",
+  microTuning,
+  onMicroTuningChange,
   onAddToGallery,
 }: ResultPreviewProps) {
   const [viewMode, setViewMode] = useState<"slider" | "side" | "linkedin">("slider");
@@ -54,6 +61,8 @@ export default function ResultPreview({
   const currentUrl = selectedImage.toURL();
   const isReady = readyUrls.has(currentUrl);
   const wardrobeLabel = getWardrobeById(activeWardrobe)?.label || "Original";
+  const cssFilter = getMicroTuningCssFilter(microTuning);
+  const vignetteStyle = getVignetteOverlayStyle(microTuning);
 
   const handleReady = () => {
     setReadyUrls((prev) => new Set(prev).add(currentUrl));
@@ -123,6 +132,13 @@ export default function ResultPreview({
             activeFilter={activeFilter}
             onFilterChange={onFilterChange}
           />
+
+          {/* Micro-Tuning & Polish Panel */}
+          <MicroTuningPanel
+            settings={microTuning}
+            onChange={onMicroTuningChange}
+            className="mt-2"
+          />
         </div>
 
         {/* VIEW MODE SWITCHER (Visible when generation is ready) */}
@@ -173,7 +189,10 @@ export default function ResultPreview({
         {/* RENDER CURRENT VIEW MODE */}
         {isReady && viewMode === "linkedin" ? (
           <div className="glass-card p-6 flex flex-col items-center">
-            <LinkedInSimulator headshotUrl={currentUrl} />
+            <LinkedInSimulator
+              headshotUrl={currentUrl}
+              headshotStyle={{ filter: cssFilter }}
+            />
           </div>
         ) : isReady && viewMode === "slider" ? (
           <div className="glass-card p-6 flex flex-col items-center">
@@ -183,6 +202,8 @@ export default function ResultPreview({
               beforeAlt="Original selfie"
               afterAlt={selectedPreset.name}
               className={aspectRatio === "1:1" ? "aspect-square" : "aspect-[4/5]"}
+              afterStyle={{ filter: cssFilter }}
+              afterOverlay={<div style={vignetteStyle} />}
             />
           </div>
         ) : (
@@ -209,7 +230,7 @@ export default function ResultPreview({
               </p>
               <div
                 className={cn(
-                  "overflow-hidden rounded-xl bg-black/30 shadow-lg shadow-indigo-500/20",
+                  "relative overflow-hidden rounded-xl bg-black/30 shadow-lg shadow-indigo-500/20",
                   aspectRatio === "1:1" ? "aspect-square" : "aspect-[4/5]",
                 )}
               >
@@ -219,7 +240,9 @@ export default function ResultPreview({
                   alt={selectedPreset.name}
                   onReady={handleReady}
                   className="h-full w-full object-cover rounded-xl"
+                  style={{ filter: cssFilter }}
                 />
+                <div style={vignetteStyle} />
               </div>
             </div>
           </div>

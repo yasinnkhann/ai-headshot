@@ -124,6 +124,8 @@ export default function Home() {
             activeFilter={headshot.activeFilter}
             onFilterChange={headshot.setActiveFilter}
             activeWardrobe={headshot.activeWardrobe}
+            microTuning={headshot.microTuning}
+            onMicroTuningChange={headshot.setMicroTuning}
             onAddToGallery={headshot.addToGallery}
           />
 
@@ -141,6 +143,7 @@ export default function Home() {
               aspectRatio={headshot.aspectRatio}
               filter={headshot.activeFilter}
               wardrobe={headshot.activeWardrobe}
+              microTuning={headshot.microTuning}
             />
           )}
         </main>

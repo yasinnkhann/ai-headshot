@@ -6,7 +6,9 @@ import type {
   PortraitFilter,
   WardrobeId,
   GeneratedHeadshotItem,
+  MicroTuningSettings,
 } from "../types";
+import { DEFAULT_MICRO_TUNING } from "../types";
 import type { CloudinaryUploadResult } from "../cloudinary/UploadWidget";
 import {
   ALL_PRESETS,
@@ -25,6 +27,7 @@ export function useHeadshot() {
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>("4:5");
   const [activeFilter, setActiveFilter] = useState<PortraitFilter>("none");
   const [activeWardrobe, setActiveWardrobe] = useState<WardrobeId>("original");
+  const [microTuning, setMicroTuning] = useState<MicroTuningSettings>(DEFAULT_MICRO_TUNING);
   const [gallery, setGallery] = useState<GeneratedHeadshotItem[]>([]);
 
   const handleUploadStart = () => {
@@ -56,6 +59,7 @@ export function useHeadshot() {
     setAspectRatio("4:5");
     setActiveFilter("none");
     setActiveWardrobe("original");
+    setMicroTuning(DEFAULT_MICRO_TUNING);
     setGallery([]);
     setUploadStatus("idle");
     setUploadError(null);
@@ -134,6 +138,8 @@ export function useHeadshot() {
     setActiveFilter,
     activeWardrobe,
     setActiveWardrobe,
+    microTuning,
+    setMicroTuning,
     gallery,
     addToGallery,
     removeFromGallery,

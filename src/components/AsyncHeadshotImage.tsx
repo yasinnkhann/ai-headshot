@@ -5,6 +5,7 @@ interface AsyncHeadshotImageProps {
   imageUrl: string;
   alt: string;
   className?: string;
+  style?: React.CSSProperties;
   onReady?: () => void;
 }
 
@@ -12,6 +13,7 @@ export function AsyncHeadshotImage({
   imageUrl,
   alt,
   className = "",
+  style,
   onReady,
 }: AsyncHeadshotImageProps) {
   const [status, setStatus] = useState<
@@ -130,6 +132,7 @@ export function AsyncHeadshotImage({
         src={imageUrl}
         alt={alt}
         className={className}
+        style={style}
         loading="eager"
       />
     );

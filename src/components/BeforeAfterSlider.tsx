@@ -7,6 +7,8 @@ interface BeforeAfterSliderProps {
   beforeAlt?: string;
   afterAlt?: string;
   className?: string;
+  afterStyle?: React.CSSProperties;
+  afterOverlay?: React.ReactNode;
 }
 
 export function BeforeAfterSlider({
@@ -15,6 +17,8 @@ export function BeforeAfterSlider({
   beforeAlt = "Original photo",
   afterAlt = "AI enhanced headshot",
   className = "",
+  afterStyle,
+  afterOverlay,
 }: BeforeAfterSliderProps) {
   const [sliderPosition, setSliderPosition] = useState(50);
   const [isDragging, setIsDragging] = useState(false);
@@ -89,8 +93,10 @@ export function BeforeAfterSlider({
           src={afterImageUrl}
           alt={afterAlt}
           className="pointer-events-none absolute inset-0 h-full w-full object-cover"
+          style={afterStyle}
           loading="eager"
         />
+        {afterOverlay}
       </div>
 
       {/* BADGES */}

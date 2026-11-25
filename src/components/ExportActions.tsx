@@ -5,6 +5,7 @@ import type {
   HeadshotPreset,
   PortraitFilter,
   WardrobeId,
+  MicroTuningSettings,
 } from "../types";
 import { cn } from "../lib/utils";
 import {
@@ -16,6 +17,11 @@ import {
   Loader2,
 } from "lucide-react";
 import { getExportUrl } from "../lib/transformations";
+import {
+  getMicroTuningCssFilter,
+  applyMicroTuningToCanvas,
+  hasActiveMicroTuning,
+} from "../lib/micro-tuning";
 
 interface ExportActionsProps {
   publicId: string;
@@ -23,6 +29,7 @@ interface ExportActionsProps {
   aspectRatio: AspectRatio;
   filter?: PortraitFilter;
   wardrobe?: WardrobeId;
+  microTuning?: MicroTuningSettings;
 }
 
 const FORMATS: { value: ExportFormat; label: string }[] = [
@@ -37,12 +44,60 @@ export default function ExportActions({
   aspectRatio,
   filter = "none",
   wardrobe = "original",
+  microTuning,
 }: ExportActionsProps) {
   const [format, setFormat] = useState<ExportFormat>("webp");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copiedUrl, setCopiedUrl] = useState(false);
   const [copiedImage, setCopiedImage] = useState(false);
+
+  async function processBlobWithMicroTuning(
+    blob: Blob,
+    mimeType: string,
+  ): Promise<Blob> {
+    if (!microTuning || !hasActiveMicroTuning(microTuning)) {
+      return blob;
+    }
+
+    const img = new Image();
+    const objectUrl = URL.createObjectURL(blob);
+    img.src = objectUrl;
+
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve();
+      img.onerror = () => reject(new Error("Failed to load image for micro-tuning export"));
+    });
+
+    const canvas = document.createElement("canvas");
+    canvas.width = img.naturalWidth || img.width;
+    canvas.height = img.naturalHeight || img.height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      URL.revokeObjectURL(objectUrl);
+      return blob;
+    }
+
+    // Apply CSS filters to 2D context
+    ctx.filter = getMicroTuningCssFilter(microTuning);
+    ctx.drawImage(img, 0, 0);
+
+    // Apply vignette
+    applyMicroTuningToCanvas(ctx, canvas.width, canvas.height, microTuning);
+
+    URL.revokeObjectURL(objectUrl);
+
+    return new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob(
+        (result) => {
+          if (result) resolve(result);
+          else reject(new Error("Canvas export failed"));
+        },
+        mimeType,
+        0.95,
+      );
+    });
+  }
 
   function buildExportUrl(): string {
     return getExportUrl(
@@ -72,8 +127,17 @@ export default function ExportActions({
 
       if (!res.ok) throw new Error(`Download failed (${res.status})`);
 
-      const blob = await res.blob();
-      if (blob.size === 0) throw new Error("Download returned an empty file");
+      const rawBlob = await res.blob();
+      if (rawBlob.size === 0) throw new Error("Download returned an empty file");
+
+      const mimeType =
+        format === "png"
+          ? "image/png"
+          : format === "jpg"
+            ? "image/jpeg"
+            : "image/webp";
+
+      const blob = await processBlobWithMicroTuning(rawBlob, mimeType);
 
       const a = document.createElement("a");
       const objectUrl = URL.createObjectURL(blob);
@@ -117,12 +181,12 @@ export default function ExportActions({
 
       if (!res.ok) throw new Error("Could not fetch image for clipboard");
 
-      const blob = await res.blob();
-      let pngBlob = blob;
+      const rawBlob = await res.blob();
+      let pngBlob = await processBlobWithMicroTuning(rawBlob, "image/png");
 
-      if (blob.type !== "image/png") {
+      if (pngBlob.type !== "image/png") {
         const img = new Image();
-        const objectUrl = URL.createObjectURL(blob);
+        const objectUrl = URL.createObjectURL(pngBlob);
         img.src = objectUrl;
         await new Promise((resolve, reject) => {
           img.onload = resolve;

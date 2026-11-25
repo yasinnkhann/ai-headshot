@@ -51,3 +51,28 @@ export interface GeneratedHeadshotItem {
   url: string;
   timestamp: number;
 }
+
+export interface MicroTuningSettings {
+  /** 0 to 100: Softens minor blemishes while preserving natural texture */
+  skinSoftening: number;
+  /** -50 (Cool Daylight) to +50 (Golden Amber) */
+  warmth: number;
+  /** -25 to +25: Fine-tunes overall facial exposure */
+  exposure: number;
+  /** -20 to +30: Portrait depth and contrast */
+  contrast: number;
+  /** 0 to 100: Edge falloff darkening to focus on subject */
+  vignette: number;
+  /** 0 to 100: Eye crispness and iris catchlight enhancement */
+  eyeClarity: number;
+}
+
+export const DEFAULT_MICRO_TUNING: MicroTuningSettings = {
+  skinSoftening: 0,
+  warmth: 0,
+  exposure: 0,
+  contrast: 0,
+  vignette: 0,
+  eyeClarity: 0,
+};
+

@@ -5,11 +5,13 @@ import { cn } from "../lib/utils";
 interface LinkedInSimulatorProps {
   headshotUrl: string;
   className?: string;
+  headshotStyle?: React.CSSProperties;
 }
 
 export function LinkedInSimulator({
   headshotUrl,
   className = "",
+  headshotStyle,
 }: LinkedInSimulatorProps) {
   const [openToWork, setOpenToWork] = useState(true);
   const [name, setName] = useState("Alex Morgan");
@@ -80,6 +82,7 @@ export function LinkedInSimulator({
                   src={headshotUrl}
                   alt={name}
                   className="h-full w-full object-cover"
+                  style={headshotStyle}
                 />
               </div>
 
