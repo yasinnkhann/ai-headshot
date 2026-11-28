@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <!-- Background Gradient -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0a0a14"/>
+      <stop offset="40%" stop-color="#0f1124"/>
+      <stop offset="100%" stop-color="#181530"/>
+    </linearGradient>
+
+    <!-- Outer Rim Glow -->
+    <linearGradient id="borderGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#818cf8"/>
+      <stop offset="50%" stop-color="#c084fc"/>
+      <stop offset="100%" stop-color="#38bdf8"/>
+    </linearGradient>
+
+    <!-- Top Chevron ("A") Gradient -->
+    <linearGradient id="topChevron" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#6366f1"/>
+      <stop offset="50%" stop-color="#818cf8"/>
+      <stop offset="100%" stop-color="#38bdf8"/>
+    </linearGradient>
+
+    <!-- Bottom Chevron ("X") Gradient -->
+    <linearGradient id="botChevron" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#a855f7"/>
+      <stop offset="50%" stop-color="#c084fc"/>
+      <stop offset="100%" stop-color="#f43f5e"/>
+    </linearGradient>
+
+    <!-- Core Star Flare -->
+    <linearGradient id="starGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="70%" stop-color="#e0e7ff"/>
+      <stop offset="100%" stop-color="#a5b4fc"/>
+    </linearGradient>
+
+    <!-- Center Ambient Glow -->
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#818cf8" stop-opacity="0.35"/>
+      <stop offset="60%" stop-color="#a855f7" stop-opacity="0.12"/>
+      <stop offset="100%" stop-color="#6366f1" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Squircle Base -->
+  <rect x="20" y="20" width="472" height="472" rx="120" fill="url(#bgGrad)" stroke="url(#borderGrad)" stroke-width="14"/>
+
+  <!-- Subtle Radial Glow -->
+  <circle cx="256" cy="256" r="200" fill="url(#glow)"/>
+
+  <!-- Top Chevron: The "A" Apex -->
+  <path d="M256 92 L392 228 C402 238 402 254 390 264 C380 274 364 274 354 264 L256 166 L158 264 C148 274 132 274 122 264 C110 254 110 238 120 228 L256 92 Z" fill="url(#topChevron)"/>
+
+  <!-- Bottom Chevron: Completing the "X" -->
+  <path d="M256 420 L120 284 C110 274 110 258 122 248 C132 238 148 238 158 248 L256 346 L354 248 C364 238 380 238 390 248 C402 258 402 274 392 284 L256 420 Z" fill="url(#botChevron)"/>
+
+  <!-- Center Generative AI 4-Point Diamond Sparkle -->
+  <path d="M256 172 Q256 256 172 256 Q256 256 256 340 Q256 256 340 256 Q256 256 256 172 Z" fill="url(#starGrad)"/>
+
+  <!-- Brilliant Center Starburst -->
+  <circle cx="256" cy="256" r="28" fill="#ffffff" opacity="0.6"/>
+  <circle cx="256" cy="256" r="14" fill="#ffffff"/>
+</svg>
