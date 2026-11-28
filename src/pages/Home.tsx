@@ -1,13 +1,16 @@
 import { useState } from "react";
 import { LandingPage } from "../components/LandingPage";
 import { LocalGalleryModal } from "../components/LocalGalleryModal";
+import { LocalSetupModal } from "../components/LocalSetupModal";
 import { PhotoStudio } from "../components/PhotoStudio";
 import { useStudio } from "../hooks/use-studio";
 import { Cpu, Images, RefreshCw, Sparkles } from "lucide-react";
+import { cn } from "../lib/utils";
 
 export default function Home() {
   const studio = useStudio();
   const [galleryOpen, setGalleryOpen] = useState(false);
+  const [setupModalOpen, setSetupModalOpen] = useState(false);
   const localConnected = Boolean(
     studio.localHealth?.ok && studio.localHealth.mfluxInstalled,
   );
@@ -57,27 +60,41 @@ export default function Home() {
             </button>
           )}
 
-          {/* Live Local AI Status Indicator */}
-          <div
-            className="hidden sm:inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-[11px] font-medium text-white/70"
-            title={
+          {/* Live Local AI Status Indicator & Setup Guide Trigger */}
+          <button
+            type="button"
+            onClick={() => setSetupModalOpen(true)}
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-medium transition cursor-pointer border",
               localConnected
-                ? studio.localHealth?.autoStartInstalled
-                  ? "Connected to local Apple Silicon mflux server (Auto-Start enabled)"
-                  : "Connected to local Apple Silicon mflux server ($0 unlimited)"
-                : "Start 'npm run local-ai' on your Mac for unlimited local AI edits"
-            }
+                ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20"
+                : "border-amber-500/30 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20",
+            )}
+            title="Click for Local Mac AI setup guide, 1-line command, and hardware status"
           >
             <span
-              className={
+              className={cn(
+                "h-2 w-2 rounded-full",
                 localConnected
-                  ? "h-2 w-2 rounded-full bg-emerald-400 animate-pulse"
-                  : "h-2 w-2 rounded-full bg-white/30"
-              }
+                  ? "bg-emerald-400 animate-pulse"
+                  : "bg-amber-400/80",
+              )}
             />
-            <Cpu className="h-3.5 w-3.5 text-white/50" />
-            <span>{localConnected ? "Local Mac AI: Ready" : "Local AI: Offline"}</span>
-          </div>
+            <Cpu className="h-3.5 w-3.5" />
+            <span className="hidden xs:inline">
+              {localConnected ? "Local Mac AI: Ready" : "Local AI: Offline"}
+            </span>
+            <span
+              className={cn(
+                "rounded-full px-1.5 py-0.2 text-[9px] font-semibold uppercase tracking-wider",
+                localConnected
+                  ? "bg-emerald-400/20 text-emerald-200"
+                  : "bg-amber-400/20 text-amber-200",
+              )}
+            >
+              {localConnected ? "Active" : "Setup"}
+            </span>
+          </button>
 
           {studio.hasPhoto && (
             <button
@@ -102,6 +119,7 @@ export default function Home() {
           onUploadSuccess={studio.handleUploadSuccess}
           onLocalOnlyUpload={studio.handleLocalOnlyUpload}
           onSelectSample={studio.loadSamplePhoto}
+          onOpenSetupModal={() => setSetupModalOpen(true)}
         />
       ) : (
         <PhotoStudio
@@ -116,6 +134,7 @@ export default function Home() {
           onEngineChange={studio.setEngine}
           localHealth={studio.localHealth}
           onRefreshLocalHealth={studio.refreshLocalHealth}
+          onOpenSetupModal={() => setSetupModalOpen(true)}
           localModel={studio.localModel}
           onLocalModelChange={studio.setLocalModel}
           localResolution={studio.localResolution}
@@ -204,6 +223,14 @@ export default function Home() {
           onClose={() => setGalleryOpen(false)}
         />
       )}
+
+      <LocalSetupModal
+        isOpen={setupModalOpen}
+        localHealth={studio.localHealth}
+        onClose={() => setSetupModalOpen(false)}
+        onSwitchToCloud={() => studio.setEngine("cloud")}
+        onRecheckConnection={studio.refreshLocalHealth}
+      />
     </div>
   );
 }

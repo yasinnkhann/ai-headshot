@@ -29,6 +29,7 @@ interface LandingPageProps {
   onUploadSuccess: (result: CloudinaryUploadResult) => void;
   onLocalOnlyUpload: (dataUrl: string) => void;
   onSelectSample: (sample: SamplePhoto, preset?: StudioPreset) => void;
+  onOpenSetupModal?: () => void;
 }
 
 const SAMPLE_BEFORE_URL =
@@ -97,6 +98,7 @@ export function LandingPage({
   onUploadSuccess,
   onLocalOnlyUpload,
   onSelectSample,
+  onOpenSetupModal,
 }: LandingPageProps) {
   const scrollToUpload = () => {
     document
@@ -130,12 +132,28 @@ export function LandingPage({
                   Alterx · Prompt-Driven AI Studio
                 </div>
 
-                {localConnected && (
-                  <div className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-300">
+                {localConnected ? (
+                  <button
+                    type="button"
+                    onClick={onOpenSetupModal}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-300 hover:bg-emerald-500/20 transition cursor-pointer"
+                    title="Click for Local Mac AI hardware status"
+                  >
                     <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
                     <Cpu className="h-3.5 w-3.5" />
                     Mac Local AI Ready (Unlimited)
-                  </div>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={onOpenSetupModal}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-300 hover:bg-amber-500/20 transition cursor-pointer"
+                    title="Click to view the 1-minute Mac Local AI setup guide"
+                  >
+                    <span className="h-2 w-2 rounded-full bg-amber-400" />
+                    <Cpu className="h-3.5 w-3.5 text-amber-300" />
+                    <span>Setup Unlimited Mac AI ($0)</span>
+                  </button>
                 )}
               </div>
 
@@ -167,10 +185,15 @@ export function LandingPage({
 
               {/* Trust Badges */}
               <div className="mt-6 flex flex-wrap items-center gap-6 text-xs text-white/60">
-                <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={onOpenSetupModal}
+                  className="flex items-center gap-1.5 hover:text-white transition cursor-pointer"
+                  title="View Mac Local AI setup guide"
+                >
                   <InfinityIcon className="h-4 w-4 text-emerald-400" />
                   <span>Unlimited Local Mac AI ($0)</span>
-                </div>
+                </button>
                 <div className="flex items-center gap-1.5">
                   <Zap className="h-4 w-4 text-indigo-400" />
                   <span>7 Surgical Cloud Photoshop Tools</span>

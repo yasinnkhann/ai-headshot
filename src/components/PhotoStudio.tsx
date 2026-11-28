@@ -48,6 +48,7 @@ import {
   Expand,
   Eye,
   EyeOff,
+  HelpCircle,
   Image as ImageIcon,
   ImagePlus,
   Images,
@@ -98,6 +99,7 @@ interface PhotoStudioProps {
   onEngineChange: (engine: EditEngine) => void;
   localHealth: LocalAiHealth | null;
   onRefreshLocalHealth: () => Promise<LocalAiHealth | null>;
+  onOpenSetupModal?: () => void;
   localModel: LocalModelId;
   onLocalModelChange: (model: LocalModelId) => void;
   localResolution: number;
@@ -217,6 +219,7 @@ export function PhotoStudio({
   onEngineChange,
   localHealth,
   onRefreshLocalHealth,
+  onOpenSetupModal,
   localModel,
   onLocalModelChange,
   localResolution,
@@ -369,7 +372,7 @@ export function PhotoStudio({
   };
 
   const handleCopyLocalCmd = async () => {
-    await navigator.clipboard.writeText("npm run local-ai");
+    await navigator.clipboard.writeText("git clone https://github.com/yasinnkhann/alterx.git && cd alterx && npm run local-ai");
     setCopiedCmd(true);
     setTimeout(() => setCopiedCmd(false), 2000);
   };
@@ -880,27 +883,30 @@ export function PhotoStudio({
               !localConnected ? (
                 <div className="space-y-4">
                   <div className="flex items-start gap-3">
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-400 border border-emerald-500/25">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500/20 to-emerald-500/20 text-emerald-400 border border-emerald-500/30">
                       <Terminal className="h-5 w-5" />
                     </div>
                     <div>
-                      <h3 className="text-sm font-semibold text-white">
-                        Start Your Local Mac AI Engine for Unlimited $0 Edits
-                      </h3>
-                      <p className="mt-1 text-xs text-white/60 leading-relaxed">
-                        <code className="text-emerald-300">mflux</code> is already
-                        installed on your Mac. Start the local bridge in your terminal to
-                        unlock unlimited FLUX.2 &amp; Qwen 2.1 prompt editing:
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-sm font-semibold text-white">
+                          Local Mac AI Engine is Offline
+                        </h3>
+                        <span className="rounded-full bg-amber-500/15 border border-amber-500/30 px-2 py-0.5 text-[10px] font-semibold text-amber-300">
+                          Setup Needed
+                        </span>
+                      </div>
+                      <p className="mt-1 text-xs text-white/65 leading-relaxed">
+                        To unlock unlimited $0 FLUX.2 &amp; Qwen 2.1 edits running on your Apple Silicon Mac GPU, run this quickstart command. Or switch to Cloud Photoshop for instant, zero-setup browser editing on any device.
                       </p>
                     </div>
                   </div>
 
-                  <div className="flex items-center justify-between rounded-xl bg-black/60 px-4 py-3 border border-white/10 font-mono text-xs text-emerald-300">
-                    <span>npm run local-ai</span>
+                  <div className="flex items-center justify-between rounded-xl bg-black/60 px-4 py-3 border border-white/10 font-mono text-xs text-emerald-300 gap-3">
+                    <span className="truncate">git clone https://github.com/yasinnkhann/alterx.git &amp;&amp; cd alterx &amp;&amp; npm run local-ai</span>
                     <button
                       type="button"
                       onClick={handleCopyLocalCmd}
-                      className="inline-flex items-center gap-1 rounded-md bg-white/10 px-2.5 py-1 text-[11px] font-sans font-medium text-white hover:bg-white/20 transition cursor-pointer"
+                      className="inline-flex items-center gap-1 rounded-md bg-white/10 px-2.5 py-1 text-[11px] font-sans font-medium text-white hover:bg-white/20 transition cursor-pointer shrink-0"
                     >
                       {copiedCmd ? (
                         <>
@@ -917,16 +923,27 @@ export function PhotoStudio({
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2.5">
+                    {onOpenSetupModal && (
+                      <button
+                        type="button"
+                        onClick={onOpenSetupModal}
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-500 transition cursor-pointer shadow-md shadow-emerald-600/25"
+                      >
+                        <HelpCircle className="h-3.5 w-3.5" />
+                        Open Mac Setup Guide
+                      </button>
+                    )}
+
                     <button
                       type="button"
                       onClick={handleRecheckServer}
                       disabled={checkingServer}
-                      className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-500 transition cursor-pointer"
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-xs font-medium text-white/80 hover:bg-white/10 transition cursor-pointer"
                     >
                       <RefreshCw
                         className={cn(
                           "h-3.5 w-3.5",
-                          checkingServer && "animate-spin",
+                          checkingServer && "animate-spin text-emerald-400",
                         )}
                       />
                       Recheck Connection
@@ -935,10 +952,10 @@ export function PhotoStudio({
                     <button
                       type="button"
                       onClick={() => onEngineChange("cloud")}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-xs font-medium text-white/80 hover:bg-white/10 transition cursor-pointer"
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-4 py-2 text-xs font-semibold text-indigo-300 hover:bg-indigo-500/20 transition cursor-pointer"
                     >
                       <Zap className="h-3.5 w-3.5 text-indigo-400" />
-                      Switch to Cloud Photoshop Now
+                      Switch to Cloud Photoshop (Zero Setup)
                     </button>
                   </div>
                 </div>
@@ -1200,6 +1217,27 @@ export function PhotoStudio({
                         </button>
                       )}
                     </div>
+                  </div>
+
+                  {/* Prompt Inspiration Chips */}
+                  <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                    <span className="text-[10px] text-white/40 uppercase font-semibold tracking-wider">Try:</span>
+                    {[
+                      "Jedi with glowing green lightsaber",
+                      "Tailored charcoal suit in modern office",
+                      "Cyberpunk leather jacket in neon rain",
+                      "Black turtleneck with dramatic rim lighting",
+                      "Medieval plate armor in stone courtyard",
+                    ].map((idea) => (
+                      <button
+                        key={idea}
+                        type="button"
+                        onClick={() => setLocalPrompt(idea)}
+                        className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-0.5 text-[10px] text-white/70 hover:border-emerald-500/40 hover:bg-emerald-500/10 hover:text-emerald-200 transition cursor-pointer"
+                      >
+                        {idea}
+                      </button>
+                    ))}
                   </div>
 
                   {/* Primary Controls Row */}
