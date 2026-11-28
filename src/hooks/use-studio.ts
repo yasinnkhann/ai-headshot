@@ -137,25 +137,36 @@ export function useStudio() {
 
   useEffect(() => {
     let active = true;
-    checkLocalAiHealth().then((health) => {
-      if (!active) return;
-      setLocalHealth(health);
-      if (health?.ok && health.mfluxInstalled) {
-        setEngine("local");
-        setGalleryDir(health.galleryDir);
-        void refreshGallery();
-      }
-    });
 
-    const interval = setInterval(() => {
+    const performCheck = () => {
       checkLocalAiHealth().then((health) => {
-        if (active) setLocalHealth(health);
+        if (!active) return;
+        setLocalHealth(health);
+        if (health?.ok && health.mfluxInstalled) {
+          setEngine("local");
+          setGalleryDir(health.galleryDir);
+          void refreshGallery();
+        }
       });
-    }, 15000);
+    };
+
+    // Check once on initial page load
+    performCheck();
+
+    // Event-driven: recheck immediately when user switches back to this browser tab
+    const handleFocus = () => {
+      if (document.visibilityState === "visible") {
+        performCheck();
+      }
+    };
+
+    window.addEventListener("focus", handleFocus);
+    document.addEventListener("visibilitychange", handleFocus);
 
     return () => {
       active = false;
-      clearInterval(interval);
+      window.removeEventListener("focus", handleFocus);
+      document.removeEventListener("visibilitychange", handleFocus);
     };
   }, [refreshGallery]);
 

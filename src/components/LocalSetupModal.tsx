@@ -37,14 +37,28 @@ export function LocalSetupModal({
 
   const isConnected = Boolean(localHealth?.ok && localHealth.mfluxInstalled);
 
-  // Poll local health every 2 seconds while modal is open
+  // Check once on modal open & immediately when switching back from Terminal
   useEffect(() => {
     if (!isOpen || !onRecheckConnection) return;
-    const interval = setInterval(() => {
+    void onRecheckConnection();
+
+    const handleFocus = () => {
       void onRecheckConnection();
-    }, 2000);
-    return () => clearInterval(interval);
+    };
+    window.addEventListener("focus", handleFocus);
+    return () => window.removeEventListener("focus", handleFocus);
   }, [isOpen, onRecheckConnection]);
+
+  // When user copies the command, trigger a smart 3-step scan (at 4s, 10s, 18s) then stop
+  useEffect(() => {
+    if (!copiedCmd || isConnected || !onRecheckConnection) return;
+    const timers = [
+      setTimeout(() => void onRecheckConnection(), 4000),
+      setTimeout(() => void onRecheckConnection(), 10000),
+      setTimeout(() => void onRecheckConnection(), 18000),
+    ];
+    return () => timers.forEach(clearTimeout);
+  }, [copiedCmd, isConnected, onRecheckConnection]);
 
   if (!isOpen) return null;
 
