@@ -201,7 +201,7 @@ export function StudioExportPanel({
       const a = document.createElement("a");
       a.href = objectUrl;
       const ratioTag = aspectRatio.replace(":", "x");
-      a.download = `ai-photo-studio-${engine}-${ratioTag}.${format}`;
+      a.download = `alterx-${engine}-${ratioTag}.${format}`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);

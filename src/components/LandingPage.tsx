@@ -12,12 +12,12 @@ import {
 import UploadCard from "./UploadCard";
 import { BeforeAfterSlider } from "./BeforeAfterSlider";
 import type {
+  CloudinaryUploadResult,
   LocalAiHealth,
   SamplePhoto,
   StudioPreset,
   UploadStatus,
 } from "../types";
-import type { CloudinaryUploadResult } from "../cloudinary/UploadWidget";
 import { CURATED_STUDIO_PRESETS, SAMPLE_PHOTOS } from "../lib/studio-engine";
 
 interface LandingPageProps {
@@ -43,6 +43,7 @@ interface ShowcaseCardItem {
   tagline: string;
   badge: string;
   imageUrl: string;
+  fallbackUrl: string;
   sampleId: string;
   presetId: string;
 }
@@ -54,6 +55,7 @@ const SHOWCASE_CARDS: ShowcaseCardItem[] = [
     tagline: "Transport portraits or objects into executive offices, Tokyo nights, or beaches",
     badge: "Backdrop AI",
     imageUrl: SAMPLE_AFTER_URL,
+    fallbackUrl: SAMPLE_BEFORE_URL,
     sampleId: "portrait-man",
     presetId: "corporate-executive",
   },
@@ -63,6 +65,8 @@ const SHOWCASE_CARDS: ShowcaseCardItem[] = [
     tagline: "Swap shirts to blazers, furniture, or props while locking facial identity",
     badge: "Replace AI",
     imageUrl:
+      "https://res.cloudinary.com/dwbhfydeg/image/upload/e_gen_replace:from_shirt;to_tailored%20charcoal%20grey%20wool%20blazer%20jacket%20with%20crisp%20white%20dress%20shirt/c_fill,w_600,h_750,g_auto/f_auto/q_auto/samples/people/smiling-man.jpg",
+    fallbackUrl:
       "https://res.cloudinary.com/dwbhfydeg/image/upload/e_gen_background_replace:prompt_minimalist%20neutral%20grey%20photo%20studio%20backdrop%20soft%20rim%20lighting/c_fill,w_600,h_750,g_auto/f_auto/q_auto/samples/people/smiling-man.jpg",
     sampleId: "portrait-man",
     presetId: "executive-blazer",
@@ -73,16 +77,20 @@ const SHOWCASE_CARDS: ShowcaseCardItem[] = [
     tagline: "Turn casual product snapshots into luxury marble or obsidian studio shots",
     badge: "Product AI",
     imageUrl:
+      "https://res.cloudinary.com/dwbhfydeg/image/upload/e_gen_background_replace:prompt_sleek%20matte%20black%20obsidian%20stone%20pedestal%20dark%20luxury%20product%20photography%20studio%20dramatic%20rim%20lighting/c_fill,w_600,h_750,g_auto/f_auto/q_auto/samples/ecommerce/shoes.png",
+    fallbackUrl:
       "https://res.cloudinary.com/dwbhfydeg/image/upload/c_fill,w_600,h_750,g_auto/f_auto/q_auto/samples/ecommerce/shoes.png",
     sampleId: "product-shoe",
     presetId: "obsidian-pedestal",
   },
   {
     id: "magic-expand",
-    title: "Magic Expand & Eraser",
-    tagline: "Outpaint cropped shots to 16:9 widescreen or erase unwanted photobombers",
+    title: "Recolor, Erase & Expand",
+    tagline: "Recolor objects, outpaint shots to 16:9 widescreen, or erase distractions",
     badge: "Photoshop AI",
     imageUrl:
+      "https://res.cloudinary.com/dwbhfydeg/image/upload/e_gen_recolor:prompt_bicycle;to-color_crimson/c_fill,w_600,h_750,g_auto/f_auto/q_auto/samples/people/bicycle.jpg",
+    fallbackUrl:
       "https://res.cloudinary.com/dwbhfydeg/image/upload/c_fill,w_600,h_750,g_auto/f_auto/q_auto/samples/people/bicycle.jpg",
     sampleId: "street-bike",
     presetId: "magic-expand-16-9",
@@ -147,12 +155,11 @@ export function LandingPage({
                   <button
                     type="button"
                     onClick={onOpenSetupModal}
-                    className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-300 hover:bg-amber-500/20 transition cursor-pointer"
-                    title="Click to view the 1-minute Mac Local AI setup guide"
+                    className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/[0.04] px-3 py-1.5 text-xs font-medium text-white/75 hover:border-emerald-500/40 hover:bg-emerald-500/10 hover:text-emerald-200 transition cursor-pointer"
+                    title="Click to connect or set up unlimited $0 Mac Local AI"
                   >
-                    <span className="h-2 w-2 rounded-full bg-amber-400" />
-                    <Cpu className="h-3.5 w-3.5 text-amber-300" />
-                    <span>Setup Unlimited Mac AI ($0)</span>
+                    <Cpu className="h-3.5 w-3.5 text-emerald-400" />
+                    <span>Optional $0 Mac Local AI</span>
                   </button>
                 )}
               </div>
@@ -179,6 +186,7 @@ export function LandingPage({
                   onUploadSuccess={onUploadSuccess}
                   onLocalOnlyUpload={onLocalOnlyUpload}
                   onSelectSample={(sample) => onSelectSample(sample)}
+                  preferLocalOnly={localConnected}
                   compact={true}
                 />
               </div>
@@ -278,6 +286,12 @@ export function LandingPage({
                     alt={card.title}
                     className="h-full w-full object-cover transition duration-500 group-hover:scale-105"
                     loading="lazy"
+                    onError={(e) => {
+                      const img = e.currentTarget;
+                      if (img.src !== card.fallbackUrl) {
+                        img.src = card.fallbackUrl;
+                      }
+                    }}
                   />
                   <div className="absolute top-3 left-3 rounded-full bg-black/70 px-2.5 py-0.5 text-[11px] font-medium text-white/90 backdrop-blur-md border border-white/10">
                     {card.badge}

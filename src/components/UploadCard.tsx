@@ -1,10 +1,9 @@
-import { AlertCircle, ImageIcon, Loader2, Upload } from "lucide-react";
-import type { SamplePhoto, UploadStatus } from "../types";
+import { AlertCircle, ImageIcon, Loader2, ShieldCheck, Upload } from "lucide-react";
+import type { CloudinaryUploadResult, SamplePhoto, UploadStatus } from "../types";
 import { useDropzone } from "react-dropzone";
 import { cn } from "../lib/utils";
 import { useState } from "react";
 import { uploadImageToCloudinary } from "../cloudinary/upload-direct";
-import type { CloudinaryUploadResult } from "../cloudinary/UploadWidget";
 import { fileToDataUrl } from "../lib/local-ai";
 import { SAMPLE_PHOTOS } from "../lib/studio-engine";
 
@@ -138,6 +137,12 @@ export default function UploadCard({
         <p className="mt-1 text-xs text-white/50">
           Portraits, products, travel, rooms — JPG, PNG, or WEBP
         </p>
+        {preferLocalOnly && (
+          <p className="mt-1.5 inline-flex items-center gap-1 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-0.5 text-[10px] font-medium text-emerald-300">
+            <ShieldCheck className="h-3 w-3" />
+            Private Local Mode · Photos stay 100% on your Mac
+          </p>
+        )}
       </div>
 
       {isUploading && (

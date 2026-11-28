@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { Suspense, lazy, useEffect, useRef, useState } from "react";
 import type {
   AspectRatio,
   EditEngine,
@@ -18,11 +18,14 @@ import type {
 } from "../types";
 import { AsyncHeadshotImage } from "./AsyncHeadshotImage";
 import { BeforeAfterSlider } from "./BeforeAfterSlider";
-import { BrushMaskEditor } from "./BrushMaskEditor";
 import { LinkedInSimulator } from "./LinkedInSimulator";
 import { MicroTuningPanel } from "./MicroTuningPanel";
 import { PortraitFilterBar } from "./PortraitFilterBar";
 import { StudioExportPanel } from "./StudioExportPanel";
+
+const BrushMaskEditor = lazy(() =>
+  import("./BrushMaskEditor").then((m) => ({ default: m.BrushMaskEditor })),
+);
 import { CURATED_STUDIO_PRESETS, isCreativeScenePrompt } from "../lib/studio-engine";
 import {
   getMicroTuningCssFilter,
@@ -95,10 +98,15 @@ interface PhotoStudioProps {
   hasCloudEdits: boolean;
 
   // Engine & Local Mac AI
+  activeSamplePrompts?: string[];
+  promotingToCloud?: boolean;
+  onPromoteLocalToCloud?: () => Promise<void>;
   engine: EditEngine;
   onEngineChange: (engine: EditEngine) => void;
   localHealth: LocalAiHealth | null;
+  checkingLocal?: boolean;
   onRefreshLocalHealth: () => Promise<LocalAiHealth | null>;
+  onTryConnectLocal?: () => Promise<void>;
   onOpenSetupModal?: () => void;
   localModel: LocalModelId;
   onLocalModelChange: (model: LocalModelId) => void;
@@ -215,10 +223,15 @@ export function PhotoStudio({
   localResultUrl,
   localPreviousResultUrl,
   hasCloudEdits,
+  activeSamplePrompts = [],
+  promotingToCloud = false,
+  onPromoteLocalToCloud,
   engine,
   onEngineChange,
   localHealth,
+  checkingLocal = false,
   onRefreshLocalHealth,
+  onTryConnectLocal,
   onOpenSetupModal,
   localModel,
   onLocalModelChange,
@@ -317,10 +330,48 @@ export function PhotoStudio({
   const [backdropPrompt, setBackdropPrompt] = useState("");
   const [copiedCmd, setCopiedCmd] = useState(false);
   const [checkingServer, setCheckingServer] = useState(false);
+  const [peekingOriginal, setPeekingOriginal] = useState(false);
 
   const localConnected = Boolean(localHealth?.ok && localHealth.mfluxInstalled);
   const isLocalGenerating =
     localJob?.status === "queued" || localJob?.status === "running";
+
+  // Photoshop-style keyboard shortcut: hold Space to peek at Original photo
+  useEffect(() => {
+    const isTypingTarget = (el: EventTarget | null) => {
+      if (!(el instanceof HTMLElement)) return false;
+      const tag = el.tagName;
+      return (
+        tag === "INPUT" ||
+        tag === "TEXTAREA" ||
+        tag === "SELECT" ||
+        el.isContentEditable
+      );
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.code === "Space" && !e.repeat && !isTypingTarget(e.target) && !brushMaskOpen) {
+        if (activeResultUrl && originalPreviewUrl && activeResultUrl !== originalPreviewUrl) {
+          e.preventDefault();
+          setPeekingOriginal(true);
+        }
+      }
+    };
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.code === "Space") setPeekingOriginal(false);
+    };
+    const onBlur = () => setPeekingOriginal(false);
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("blur", onBlur);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("blur", onBlur);
+    };
+  }, [activeResultUrl, originalPreviewUrl, brushMaskOpen]);
+
+  const displayedResultUrl =
+    peekingOriginal && originalPreviewUrl ? originalPreviewUrl : activeResultUrl;
 
   const cssFilter = getMicroTuningCssFilter(microTuning);
   const vignetteStyle = getVignetteOverlayStyle(microTuning);
@@ -429,7 +480,8 @@ export function PhotoStudio({
     (localSeedLocked || localSeed.trim() ? 1 : 0) +
     (localNegativePrompt.trim() ? 1 : 0) +
     (localLoraPath.trim() ? 1 : 0) +
-    (localAutoMask.trim() && !localMaskDataUrl ? 1 : 0);
+    (localAutoMask.trim() && !localMaskDataUrl ? 1 : 0) +
+    (localModel === "qwen-2.1-turbo" && localVerify ? 1 : 0);
 
   return (
     <main className="mx-auto max-w-7xl px-4 py-6 pb-16">
@@ -439,7 +491,16 @@ export function PhotoStudio({
         <div className="inline-flex items-center gap-1 rounded-xl border border-white/10 bg-white/[0.04] p-1 self-start">
           <button
             type="button"
-            onClick={() => onEngineChange("local")}
+            disabled={checkingLocal}
+            onClick={() => {
+              if (localConnected) {
+                onEngineChange("local");
+              } else if (onTryConnectLocal) {
+                void onTryConnectLocal();
+              } else {
+                onEngineChange("local");
+              }
+            }}
             className={cn(
               "inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs font-semibold transition cursor-pointer",
               engine === "local"
@@ -447,21 +508,20 @@ export function PhotoStudio({
                 : "text-white/70 hover:text-white hover:bg-white/5",
             )}
           >
-            <InfinityIcon className="h-3.5 w-3.5" />
-            <span>Local Mac AI (Unlimited)</span>
-            <span
-              className={cn(
-                "h-2 w-2 rounded-full",
-                localConnected
-                  ? "bg-emerald-300 animate-pulse"
-                  : "bg-amber-400/80",
-              )}
-              title={
-                localConnected
-                  ? "Connected to local Apple Silicon mflux server"
-                  : "Local server not running"
-              }
-            />
+            {checkingLocal ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-emerald-300" />
+            ) : (
+              <InfinityIcon className="h-3.5 w-3.5" />
+            )}
+            <span>
+              {checkingLocal ? "Checking Mac..." : "Local Mac AI (Unlimited)"}
+            </span>
+            {localConnected && (
+              <span
+                className="h-2 w-2 rounded-full bg-emerald-300 animate-pulse"
+                title="Connected to local Apple Silicon mflux server"
+              />
+            )}
           </button>
 
           <button
@@ -744,13 +804,18 @@ export function PhotoStudio({
                           : "bg-black/40",
                       )}
                     >
+                      {peekingOriginal && (
+                        <div className="pointer-events-none absolute top-3 left-3 z-10 rounded-full bg-black/75 border border-white/20 px-3 py-1 text-[11px] font-semibold text-white backdrop-blur-md">
+                          Showing Original · Release Space
+                        </div>
+                      )}
                       <img
-                        src={activeResultUrl}
-                        alt="Edited result"
+                        src={displayedResultUrl || activeResultUrl}
+                        alt={peekingOriginal ? "Original photo" : "Edited result"}
                         className="mx-auto max-h-[600px] w-full object-contain"
-                        style={{ filter: cssFilter }}
+                        style={{ filter: peekingOriginal ? "none" : cssFilter }}
                       />
-                      <div style={vignetteStyle} />
+                      {!peekingOriginal && <div style={vignetteStyle} />}
                     </div>
                   ) : viewMode === "side" ? (
                     <div className="space-y-3">
@@ -854,20 +919,37 @@ export function PhotoStudio({
                           </button>
                         </div>
                       )}
-                      <BeforeAfterSlider
-                        beforeImageUrl={effectiveBeforeUrl || originalPreviewUrl}
-                        afterImageUrl={activeResultUrl}
-                        beforeAlt={effectiveBeforeLabel}
-                        afterAlt="AI edited photo"
-                        beforeLabel={effectiveBeforeLabel}
-                        className={cn("max-w-xl", aspectClass)}
-                        afterStyle={{ filter: cssFilter }}
-                        afterOverlay={<div style={vignetteStyle} />}
-                      />
-                      {activeResultUrl === originalPreviewUrl && (
+                      {peekingOriginal ? (
+                        <div className="relative overflow-hidden rounded-xl border border-white/20 bg-black/40 max-w-xl w-full">
+                          <div className="pointer-events-none absolute top-3 left-3 z-10 rounded-full bg-black/75 border border-white/20 px-3 py-1 text-[11px] font-semibold text-white backdrop-blur-md">
+                            Showing Original · Release Space
+                          </div>
+                          <img
+                            src={originalPreviewUrl}
+                            alt="Original photo"
+                            className="mx-auto max-h-[600px] w-full object-contain"
+                          />
+                        </div>
+                      ) : (
+                        <BeforeAfterSlider
+                          beforeImageUrl={effectiveBeforeUrl || originalPreviewUrl}
+                          afterImageUrl={activeResultUrl}
+                          beforeAlt={effectiveBeforeLabel}
+                          afterAlt="AI edited photo"
+                          beforeLabel={effectiveBeforeLabel}
+                          className={cn("max-w-xl", aspectClass)}
+                          afterStyle={{ filter: cssFilter }}
+                          afterOverlay={<div style={vignetteStyle} />}
+                        />
+                      )}
+                      {activeResultUrl === originalPreviewUrl ? (
                         <p className="mt-3 text-xs text-white/50">
                           ✨ Describe an edit below or click a preset on the right to
                           transform this photo.
+                        </p>
+                      ) : (
+                        <p className="mt-2 text-[11px] text-white/40 hidden sm:block">
+                          Tip: Hold <kbd className="rounded border border-white/15 bg-white/5 px-1.5 py-0.5 font-mono text-[10px] text-white/65">Space</kbd> anytime to peek at the original
                         </p>
                       )}
                     </div>
@@ -1170,6 +1252,12 @@ export function PhotoStudio({
                         type="text"
                         value={localPrompt}
                         onChange={(e) => setLocalPrompt(e.target.value)}
+                        onKeyDown={(e) => {
+                          if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && localPrompt.trim() && !isLocalGenerating) {
+                            e.preventDefault();
+                            onRunLocalPrompt(localPrompt.trim());
+                          }
+                        }}
                         placeholder={
                           localReferenceImages.length > 0
                             ? "e.g. 'Put me wearing the jacket from image 2 in a warm sunlit coffee shop'"
@@ -1219,28 +1307,29 @@ export function PhotoStudio({
                     </div>
                   </div>
 
-                  {/* Prompt Inspiration Chips */}
-                  <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                    <span className="text-[10px] text-white/40 uppercase font-semibold tracking-wider">Try:</span>
-                    {[
-                      "Jedi with glowing green lightsaber",
-                      "Tailored charcoal suit in modern office",
-                      "Cyberpunk leather jacket in neon rain",
-                      "Black turtleneck with dramatic rim lighting",
-                      "Medieval plate armor in stone courtyard",
-                    ].map((idea) => (
-                      <button
-                        key={idea}
-                        type="button"
-                        onClick={() => setLocalPrompt(idea)}
-                        className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-0.5 text-[10px] text-white/70 hover:border-emerald-500/40 hover:bg-emerald-500/10 hover:text-emerald-200 transition cursor-pointer"
-                      >
-                        {idea}
-                      </button>
-                    ))}
-                  </div>
+                  {/* Single Context-Aware Prompt Suggestions Row (hides while typing to stay clean) */}
+                  {!localPrompt.trim() && (
+                    <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                      <span className="text-[10px] text-white/40 uppercase font-semibold tracking-wider">
+                        Try:
+                      </span>
+                      {(activeSamplePrompts.length > 0
+                        ? activeSamplePrompts
+                        : LOCAL_PROMPT_IDEAS.slice(0, 4)
+                      ).map((idea) => (
+                        <button
+                          key={idea}
+                          type="button"
+                          onClick={() => setLocalPrompt(idea)}
+                          className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-0.5 text-[10px] text-white/70 hover:border-emerald-500/40 hover:bg-emerald-500/10 hover:text-emerald-200 transition cursor-pointer truncate max-w-[260px]"
+                        >
+                          {idea}
+                        </button>
+                      ))}
+                    </div>
+                  )}
 
-                  {/* Primary Controls Row */}
+                  {/* Primary Controls Row (Decluttered — advanced options live in Pro Controls) */}
                   <div className="flex flex-wrap items-center gap-x-3.5 gap-y-2 text-[11px] text-white/75 pt-0.5">
                     {/* Resolution */}
                     <div className="flex items-center gap-1">
@@ -1275,34 +1364,6 @@ export function PhotoStudio({
                         />
                         <span>Continue from latest</span>
                       </label>
-                    )}
-
-                    {/* Qwen 2.1 Max-Accuracy Extra Options */}
-                    {localModel === "qwen-2.1-turbo" && (
-                      <>
-                        <label className="inline-flex items-center gap-1.5 cursor-pointer select-none">
-                          <input
-                            type="checkbox"
-                            checked={localEnhancePrompt}
-                            onChange={(e) =>
-                              onLocalEnhancePromptChange(e.target.checked)
-                            }
-                            className="accent-indigo-500 rounded"
-                          />
-                          <span>Auto-Enhance Prompt</span>
-                        </label>
-                        <label className="inline-flex items-center gap-1.5 cursor-pointer select-none">
-                          <input
-                            type="checkbox"
-                            checked={localVerify}
-                            onChange={(e) =>
-                              onLocalVerifyChange(e.target.checked)
-                            }
-                            className="accent-indigo-500 rounded"
-                          />
-                          <span>AI Self-Verify</span>
-                        </label>
-                      </>
                     )}
 
                     {/* Sound / Desktop Alert Bell */}
@@ -1552,6 +1613,40 @@ export function PhotoStudio({
                         />
                       </div>
 
+                      {/* Qwen 2.1 Quality & Verification Toggles */}
+                      {localModel === "qwen-2.1-turbo" && (
+                        <div className="flex flex-wrap items-center gap-4 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-[11px] text-white/80">
+                          <label
+                            className="inline-flex items-center gap-1.5 cursor-pointer select-none"
+                            title="Rewrites short prompts into richer studio photography instructions"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={localEnhancePrompt}
+                              onChange={(e) =>
+                                onLocalEnhancePromptChange(e.target.checked)
+                              }
+                              className="accent-indigo-500 rounded"
+                            />
+                            <span>Auto-Enhance Prompt</span>
+                          </label>
+                          <label
+                            className="inline-flex items-center gap-1.5 cursor-pointer select-none"
+                            title="Runs an extra vision check after generation to verify accuracy (adds ~20s)"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={localVerify}
+                              onChange={(e) =>
+                                onLocalVerifyChange(e.target.checked)
+                              }
+                              className="accent-indigo-500 rounded"
+                            />
+                            <span>AI Self-Verify</span>
+                          </label>
+                        </div>
+                      )}
+
                       {/* Qwen Text Auto-Mask Input (when Brush Mask is not set) */}
                       {localModel === "qwen-2.1-turbo" && !localMaskDataUrl && (
                         <div className="flex flex-col sm:flex-row sm:items-center gap-2 rounded-lg bg-indigo-500/10 border border-indigo-500/20 px-3 py-2">
@@ -1571,38 +1666,38 @@ export function PhotoStudio({
                       )}
                     </div>
                   )}
-
-                  {/* Quick Prompt Ideas */}
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="text-[10px] text-white/40 mr-1">Try:</span>
-                    {LOCAL_PROMPT_IDEAS.slice(0, 3).map((idea) => (
-                      <button
-                        key={idea}
-                        type="button"
-                        onClick={() => setLocalPrompt(idea)}
-                        className="rounded-full border border-white/10 bg-white/[0.03] px-2.5 py-1 text-[10px] text-white/65 hover:bg-white/10 hover:text-white transition cursor-pointer truncate max-w-[260px]"
-                      >
-                        {idea}
-                      </button>
-                    ))}
-                  </div>
                 </form>
               )
             ) : !publicId ? (
-              /* Local-only uploaded image cannot use Cloud tools without cloud upload */
-              <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-white/70">
+              /* Local-only uploaded image can be promoted to Cloud Photoshop in 1 click */
+              <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-white/75">
                 <span>
-                  This photo was opened locally without uploading to Cloudinary. Use{" "}
-                  <strong className="text-emerald-300">Local Mac AI</strong> for unlimited
-                  private edits.
+                  This photo stayed <strong className="text-emerald-300">100% private on your Mac</strong>. Upload it to Cloudinary if you&apos;d like to run Cloud Photoshop layers on it.
                 </span>
-                <button
-                  type="button"
-                  onClick={() => onEngineChange("local")}
-                  className="rounded-lg bg-emerald-600 px-3.5 py-1.5 text-xs font-semibold text-white cursor-pointer"
-                >
-                  Switch to Local AI
-                </button>
+                <div className="flex items-center gap-2">
+                  {onPromoteLocalToCloud && (
+                    <button
+                      type="button"
+                      disabled={promotingToCloud}
+                      onClick={() => void onPromoteLocalToCloud()}
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 px-3.5 py-1.5 text-xs font-semibold text-white transition cursor-pointer disabled:opacity-60"
+                    >
+                      {promotingToCloud ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Zap className="h-3.5 w-3.5" />
+                      )}
+                      {promotingToCloud ? "Uploading..." : "Upload to Cloud Tools"}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => onEngineChange("local")}
+                    className="rounded-lg border border-emerald-500/30 bg-emerald-500/15 hover:bg-emerald-500/25 px-3.5 py-1.5 text-xs font-semibold text-emerald-200 transition cursor-pointer"
+                  >
+                    Back to Local AI
+                  </button>
+                </div>
               </div>
             ) : (
               /* === CLOUD PHOTOSHOP TOOL BAR (7 GENERATIVE TOOLS) === */
@@ -2043,7 +2138,7 @@ export function PhotoStudio({
               )}
             >
               <Layers className="h-3.5 w-3.5" />
-              Layers
+              {engine === "local" ? "Tools" : "Layers"}
             </button>
             <button
               type="button"
@@ -2348,18 +2443,20 @@ export function PhotoStudio({
         </aside>
       </div>
 
-      {/* Interactive Brush Mask Editor Modal */}
-      {brushMaskOpen && maskSourceImageUrl && (
-        <BrushMaskEditor
-          sourceImageUrl={maskSourceImageUrl}
-          initialMaskDataUrl={localMaskDataUrl}
-          onSave={(maskData, previewData) => {
-            onSaveBrushMask(maskData, previewData);
-            setBrushMaskOpen(false);
-          }}
-          onClose={() => setBrushMaskOpen(false)}
-        />
-      )}
+      {/* Interactive Brush Mask Editor Modal (lazy-loaded) */}
+      <Suspense fallback={null}>
+        {brushMaskOpen && maskSourceImageUrl && (
+          <BrushMaskEditor
+            sourceImageUrl={maskSourceImageUrl}
+            initialMaskDataUrl={localMaskDataUrl}
+            onSave={(maskData, previewData) => {
+              onSaveBrushMask(maskData, previewData);
+              setBrushMaskOpen(false);
+            }}
+            onClose={() => setBrushMaskOpen(false)}
+          />
+        )}
+      </Suspense>
     </main>
   );
 }

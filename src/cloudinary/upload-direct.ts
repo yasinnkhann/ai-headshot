@@ -1,4 +1,15 @@
-import type { CloudinaryUploadResult } from "./UploadWidget";
+import type { CloudinaryUploadResult } from "../types";
+
+export async function dataUrlToFile(
+  dataUrl: string,
+  filename = "alterx-photo.png",
+): Promise<File> {
+  const res = await fetch(dataUrl);
+  const blob = await res.blob();
+  const ext = blob.type.split("/")[1]?.replace("jpeg", "jpg") || "png";
+  const finalName = filename.includes(".") ? filename : `${filename}.${ext}`;
+  return new File([blob], finalName, { type: blob.type || "image/png" });
+}
 
 export async function uploadImageToCloudinary(
   file: File,

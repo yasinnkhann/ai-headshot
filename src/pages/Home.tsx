@@ -1,11 +1,21 @@
-import { useState } from "react";
+import { Suspense, lazy, useState } from "react";
 import { LandingPage } from "../components/LandingPage";
-import { LocalGalleryModal } from "../components/LocalGalleryModal";
-import { LocalSetupModal } from "../components/LocalSetupModal";
 import { PhotoStudio } from "../components/PhotoStudio";
 import { useStudio } from "../hooks/use-studio";
-import { Cpu, Images, RefreshCw, Sparkles } from "lucide-react";
+import { Cpu, Images, Loader2, RefreshCw, Sparkles } from "lucide-react";
 import { cn } from "../lib/utils";
+
+const LocalGalleryModal = lazy(() =>
+  import("../components/LocalGalleryModal").then((m) => ({
+    default: m.LocalGalleryModal,
+  })),
+);
+
+const LocalSetupModal = lazy(() =>
+  import("../components/LocalSetupModal").then((m) => ({
+    default: m.LocalSetupModal,
+  })),
+);
 
 export default function Home() {
   const studio = useStudio();
@@ -16,6 +26,14 @@ export default function Home() {
   );
 
   const handleReset = () => {
+    if (
+      studio.isLocalGenerating &&
+      !window.confirm(
+        "A local GPU render is still running. Cancel it and choose a new photo?",
+      )
+    ) {
+      return;
+    }
     studio.resetStudio();
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -23,6 +41,29 @@ export default function Home() {
   const handleOpenGallery = () => {
     setGalleryOpen(true);
     void studio.refreshGallery();
+  };
+
+  /** Lazy on-click local check: connects seamlessly if running, otherwise opens Setup Guide */
+  const handleTryConnectLocal = async () => {
+    if (localConnected) {
+      studio.setEngine("local");
+      return;
+    }
+    const ok = await studio.tryConnectLocal();
+    if (!ok) {
+      setSetupModalOpen(true);
+    }
+  };
+
+  const handleHeaderLocalClick = async () => {
+    if (localConnected) {
+      setSetupModalOpen(true);
+      return;
+    }
+    const ok = await studio.tryConnectLocal();
+    if (!ok) {
+      setSetupModalOpen(true);
+    }
   };
 
   return (
@@ -55,45 +96,49 @@ export default function Home() {
               <Images className="h-3.5 w-3.5 text-emerald-400" />
               <span>Library</span>
               <span className="rounded-full bg-black/35 px-1.5 py-0.5 text-[10px] font-mono text-emerald-300">
-                {studio.galleryItems.length || studio.localHealth?.galleryCount || 0}
+                {studio.galleryItems.length ||
+                  studio.localHealth?.galleryCount ||
+                  0}
               </span>
             </button>
           )}
 
-          {/* Live Local AI Status Indicator & Setup Guide Trigger */}
+          {/* Clean On-Click Local Mac AI Pill (Zero unrequested probes for new visitors) */}
           <button
             type="button"
-            onClick={() => setSetupModalOpen(true)}
+            onClick={() => void handleHeaderLocalClick()}
+            disabled={studio.checkingLocal}
             className={cn(
               "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-medium transition cursor-pointer border",
               localConnected
                 ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20"
-                : "border-amber-500/30 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20",
+                : "border-white/15 bg-white/[0.04] text-white/75 hover:border-emerald-500/40 hover:bg-emerald-500/10 hover:text-emerald-200",
             )}
-            title="Click for Local Mac AI setup guide, 1-line command, and hardware status"
+            title={
+              localConnected
+                ? "Connected to Local Mac AI — click for hardware status"
+                : "Click to connect or set up unlimited $0 Local Mac AI"
+            }
           >
-            <span
-              className={cn(
-                "h-2 w-2 rounded-full",
-                localConnected
-                  ? "bg-emerald-400 animate-pulse"
-                  : "bg-amber-400/80",
-              )}
-            />
-            <Cpu className="h-3.5 w-3.5" />
+            {studio.checkingLocal ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-emerald-400" />
+            ) : localConnected ? (
+              <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+            ) : (
+              <Cpu className="h-3.5 w-3.5 text-emerald-400" />
+            )}
             <span className="hidden xs:inline">
-              {localConnected ? "Local Mac AI: Ready" : "Local AI: Offline"}
+              {studio.checkingLocal
+                ? "Checking Mac..."
+                : localConnected
+                  ? "Local Mac AI"
+                  : "Local Mac AI"}
             </span>
-            <span
-              className={cn(
-                "rounded-full px-1.5 py-0.2 text-[9px] font-semibold uppercase tracking-wider",
-                localConnected
-                  ? "bg-emerald-400/20 text-emerald-200"
-                  : "bg-amber-400/20 text-amber-200",
-              )}
-            >
-              {localConnected ? "Active" : "Setup"}
-            </span>
+            {localConnected && (
+              <span className="rounded-full bg-emerald-400/20 px-1.5 py-0.2 text-[9px] font-semibold uppercase tracking-wider text-emerald-200">
+                Active
+              </span>
+            )}
           </button>
 
           {studio.hasPhoto && (
@@ -119,7 +164,7 @@ export default function Home() {
           onUploadSuccess={studio.handleUploadSuccess}
           onLocalOnlyUpload={studio.handleLocalOnlyUpload}
           onSelectSample={studio.loadSamplePhoto}
-          onOpenSetupModal={() => setSetupModalOpen(true)}
+          onOpenSetupModal={() => void handleHeaderLocalClick()}
         />
       ) : (
         <PhotoStudio
@@ -130,10 +175,15 @@ export default function Home() {
           localResultUrl={studio.localResultUrl}
           localPreviousResultUrl={studio.localPreviousResultUrl}
           hasCloudEdits={studio.hasCloudEdits}
+          activeSamplePrompts={studio.activeSamplePrompts}
+          promotingToCloud={studio.promotingToCloud}
+          onPromoteLocalToCloud={studio.promoteLocalPhotoToCloud}
           engine={studio.engine}
           onEngineChange={studio.setEngine}
           localHealth={studio.localHealth}
+          checkingLocal={studio.checkingLocal}
           onRefreshLocalHealth={studio.refreshLocalHealth}
+          onTryConnectLocal={handleTryConnectLocal}
           onOpenSetupModal={() => setSetupModalOpen(true)}
           localModel={studio.localModel}
           onLocalModelChange={studio.setLocalModel}
@@ -176,13 +226,15 @@ export default function Home() {
           localLastOperation={studio.localLastOperation}
           chainLocalEdits={studio.chainLocalEdits}
           onChainLocalEditsChange={studio.setChainLocalEdits}
-          onRunLocalPrompt={(prompt) => studio.runLocalAiPrompt(prompt)}
+          onRunLocalPrompt={studio.runLocalAiPrompt}
           onRegenerateLocalEdit={studio.regenerateLocalEdit}
           onRunLocalUpscale={studio.runLocalUpscale}
           onRunLocalCutout={studio.runLocalCutout}
           onCancelLocalJob={studio.cancelActiveLocalJob}
+          galleryCount={
+            studio.galleryItems.length || studio.localHealth?.galleryCount || 0
+          }
           onOpenGallery={handleOpenGallery}
-          galleryCount={studio.galleryItems.length}
           layers={studio.layers}
           estimatedCredits={studio.estimatedCredits}
           onAddLayer={studio.addLayer}
@@ -204,33 +256,40 @@ export default function Home() {
         />
       )}
 
-      {galleryOpen && (
-        <LocalGalleryModal
-          items={studio.galleryItems}
-          galleryDir={studio.galleryDir}
-          loading={studio.galleryLoading}
-          canAddAsReference={studio.hasPhoto}
-          onRefresh={studio.refreshGallery}
-          onOpenFolder={studio.openGalleryInFinder}
-          onLoadItem={studio.loadGalleryItemIntoStudio}
-          onAddAsReference={(item) =>
-            studio.addLocalReferenceFromUrl(
-              item.prompt.slice(0, 24) || item.filename,
-              item.imageUrl,
-            )
-          }
-          onDeleteItem={studio.deleteGalleryEntry}
-          onClose={() => setGalleryOpen(false)}
-        />
-      )}
+      <Suspense fallback={null}>
+        {galleryOpen && (
+          <LocalGalleryModal
+            items={studio.galleryItems}
+            galleryDir={studio.galleryDir}
+            loading={studio.galleryLoading}
+            canAddAsReference={studio.hasPhoto}
+            onRefresh={studio.refreshGallery}
+            onOpenFolder={studio.openGalleryInFinder}
+            onLoadItem={studio.loadGalleryItemIntoStudio}
+            onAddAsReference={(item) =>
+              studio.addLocalReferenceFromUrl(
+                item.prompt.slice(0, 24) || item.filename,
+                item.imageUrl,
+              )
+            }
+            onDeleteItem={studio.deleteGalleryEntry}
+            onClose={() => setGalleryOpen(false)}
+          />
+        )}
 
-      <LocalSetupModal
-        isOpen={setupModalOpen}
-        localHealth={studio.localHealth}
-        onClose={() => setSetupModalOpen(false)}
-        onSwitchToCloud={() => studio.setEngine("cloud")}
-        onRecheckConnection={studio.refreshLocalHealth}
-      />
+        {setupModalOpen && (
+          <LocalSetupModal
+            isOpen={setupModalOpen}
+            localHealth={studio.localHealth}
+            onClose={() => setSetupModalOpen(false)}
+            onSwitchToCloud={() => studio.setEngine("cloud")}
+            onSwitchToLocal={() => studio.setEngine("local")}
+            onRecheckConnection={() =>
+              studio.refreshLocalHealth({ switchToLocal: false })
+            }
+          />
+        )}
+      </Suspense>
     </div>
   );
 }

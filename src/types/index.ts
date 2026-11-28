@@ -1,5 +1,17 @@
 import type { CloudinaryImage } from "@cloudinary/url-gen/assets/CloudinaryImage";
 
+export interface CloudinaryUploadResult {
+  public_id: string;
+  secure_url: string;
+  url: string;
+  width: number;
+  height: number;
+  format: string;
+  resource_type: string;
+  bytes: number;
+  created_at: string;
+}
+
 export type UploadStatus = "idle" | "uploading" | "success" | "error";
 
 export type EditEngine = "local" | "cloud";

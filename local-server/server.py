@@ -58,13 +58,12 @@ GALLERY_DIR.mkdir(parents=True, exist_ok=True)
 LEGACY_GALLERY_DIR = Path.home() / "Pictures" / "AI-Photo-Studio"
 if LEGACY_GALLERY_DIR.exists() and LEGACY_GALLERY_DIR != GALLERY_DIR:
     try:
-        import shutil
         for legacy_file in LEGACY_GALLERY_DIR.glob("*.*"):
             dest = GALLERY_DIR / legacy_file.name
             if not dest.exists():
                 shutil.copy2(legacy_file, dest)
     except Exception as e:
-        logger.warning(f"Could not migrate legacy gallery images: {e}")
+        print(f"[Alterx Local] Could not migrate legacy gallery images: {e}")
 
 LAUNCH_AGENT_PLIST = (
     Path.home() / "Library" / "LaunchAgents" / "com.yasinkhan.ai-photo-studio.plist"
@@ -658,17 +657,53 @@ def parse_prompt_with_ollama(prompt: str) -> list[dict[str, Any]] | None:
     return None
 
 
+ALLOWED_ORIGIN_PATTERNS = [
+    re.compile(r"^https://alterx\.vercel\.app$"),
+    re.compile(r"^https://alterx-[a-z0-9-]+-yasinnkhanns-projects\.vercel\.app$"),
+    re.compile(r"^http://localhost(:\d+)?$"),
+    re.compile(r"^http://127\.0\.0\.1(:\d+)?$"),
+]
+
+EXTRA_ALLOWED_ORIGINS = {
+    o.strip().rstrip("/")
+    for o in os.environ.get("ALTERX_ALLOWED_ORIGINS", "").split(",")
+    if o.strip()
+}
+
+
+def is_allowed_origin(origin: str | None) -> bool:
+    if not origin:
+        return True
+    cleaned = origin.strip().rstrip("/")
+    if cleaned in EXTRA_ALLOWED_ORIGINS:
+        return True
+    return any(p.match(cleaned) for p in ALLOWED_ORIGIN_PATTERNS)
+
+
 class StudioHandler(BaseHTTPRequestHandler):
     def log_message(self, format: str, *args: Any) -> None:
-        print(f"[Local AI] {self.address_string()} - {format % args}")
+        print(f"[Alterx Local] {self.address_string()} - {format % args}")
+
+    def _check_origin(self) -> bool:
+        origin = self.headers.get("Origin")
+        if not is_allowed_origin(origin):
+            raw = json.dumps({"error": "Origin not allowed"}).encode("utf-8")
+            self.send_response(403)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(raw)))
+            self.end_headers()
+            self.wfile.write(raw)
+            return False
+        return True
 
     def _send_cors_headers(self) -> None:
-        origin = self.headers.get("Origin") or "*"
-        self.send_header("Access-Control-Allow-Origin", origin)
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
-        self.send_header("Access-Control-Allow-Private-Network", "true")
-        self.send_header("Vary", "Origin")
+        origin = self.headers.get("Origin")
+        if origin and is_allowed_origin(origin):
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+            self.send_header("Access-Control-Allow-Private-Network", "true")
+            self.send_header("Vary", "Origin")
 
     def _send_json(self, status: int, payload: dict[str, Any]) -> None:
         raw = json.dumps(payload).encode("utf-8")
@@ -696,11 +731,15 @@ class StudioHandler(BaseHTTPRequestHandler):
         return json.loads(raw.decode("utf-8"))
 
     def do_OPTIONS(self) -> None:
+        if not self._check_origin():
+            return
         self.send_response(204)
         self._send_cors_headers()
         self.end_headers()
 
     def do_GET(self) -> None:
+        if not self._check_origin():
+            return
         path = self.path.split("?", 1)[0]
 
         if path == "/health":
@@ -791,6 +830,8 @@ class StudioHandler(BaseHTTPRequestHandler):
         self._send_json(404, {"error": "Not found"})
 
     def do_DELETE(self) -> None:
+        if not self._check_origin():
+            return
         path = self.path.split("?", 1)[0]
         if path.startswith("/gallery/"):
             item_id = path.removeprefix("/gallery/").strip("/")
@@ -802,6 +843,8 @@ class StudioHandler(BaseHTTPRequestHandler):
         self._send_json(404, {"error": "Not found"})
 
     def do_POST(self) -> None:
+        if not self._check_origin():
+            return
         path = self.path.split("?", 1)[0]
 
         if path == "/edit":
@@ -882,7 +925,7 @@ class ReusableThreadingHTTPServer(ThreadingHTTPServer):
 
 def main() -> None:
     server = ReusableThreadingHTTPServer((HOST, PORT), StudioHandler)
-    print(f"✨ AI Photo Studio Local MLX Server listening on http://{HOST}:{PORT}")
+    print(f"✨ Alterx Local MLX Server listening on http://{HOST}:{PORT}")
     print(f"   mflux-generate-flux2-edit:    {find_binary('mflux-generate-flux2-edit') or 'NOT FOUND'}")
     print(f"   mflux-generate-qwen-2.1-edit: {find_binary('mflux-generate-qwen-2.1-edit') or 'NOT FOUND'}")
     print(f"   mflux-upscale-seedvr2:        {find_binary('mflux-upscale-seedvr2') or 'NOT FOUND'}")
@@ -893,7 +936,7 @@ def main() -> None:
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        print("\nShutting down Local AI Photo Studio Server...")
+        print("\nShutting down Alterx Local MLX Server...")
         server.server_close()
 
 

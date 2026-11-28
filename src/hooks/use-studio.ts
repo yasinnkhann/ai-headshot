@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   AspectRatio,
+  CloudinaryUploadResult,
   EditEngine,
   EditHistoryItem,
   LocalAiHealth,
@@ -19,7 +20,10 @@ import type {
   UploadStatus,
 } from "../types";
 import { DEFAULT_MICRO_TUNING } from "../types";
-import type { CloudinaryUploadResult } from "../cloudinary/UploadWidget";
+import {
+  dataUrlToFile,
+  uploadImageToCloudinary,
+} from "../cloudinary/upload-direct";
 import {
   buildOriginalStudioPreview,
   buildStudioImage,
@@ -42,6 +46,23 @@ import {
 } from "../lib/local-ai";
 
 const DEFAULT_PAGE_TITLE = "Alterx";
+const LOCAL_KNOWN_STORAGE_KEY = "alterx_local_enabled";
+
+function readLocalKnown(): boolean {
+  try {
+    return window.localStorage.getItem(LOCAL_KNOWN_STORAGE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function writeLocalKnown(): void {
+  try {
+    window.localStorage.setItem(LOCAL_KNOWN_STORAGE_KEY, "1");
+  } catch {
+    // Ignore storage errors in private browsing
+  }
+}
 
 export function useStudio() {
   // Base source photo state (supports BOTH Cloudinary uploads AND pure local-only files!)
@@ -49,10 +70,13 @@ export function useStudio() {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [publicId, setPublicId] = useState<string | null>(null);
   const [originalUrl, setOriginalUrl] = useState<string | null>(null);
+  const [activeSamplePrompts, setActiveSamplePrompts] = useState<string[]>([]);
+  const [promotingToCloud, setPromotingToCloud] = useState<boolean>(false);
 
   // Engine & local AI health
   const [engine, setEngine] = useState<EditEngine>("cloud");
   const [localHealth, setLocalHealth] = useState<LocalAiHealth | null>(null);
+  const [checkingLocal, setCheckingLocal] = useState<boolean>(false);
   const [localModel, setLocalModel] = useState<LocalModelId>("qwen-2.1-turbo");
   const [localResolution, setLocalResolution] = useState<number>(768);
   const [localStrength, setLocalStrength] = useState<number>(1.0);
@@ -125,48 +149,51 @@ export function useStudio() {
     }
   }, []);
 
-  // Check local Mac mflux server availability on mount & every 15s
-  const refreshLocalHealth = useCallback(async () => {
-    const health = await checkLocalAiHealth();
-    setLocalHealth(health);
-    if (health?.ok) {
-      setGalleryDir(health.galleryDir);
-    }
-    return health;
-  }, []);
-
-  useEffect(() => {
-    let active = true;
-
-    const performCheck = () => {
-      checkLocalAiHealth().then((health) => {
-        if (!active) return;
+  // Lazy + Remember local AI health check:
+  // - Never probes 127.0.0.1 for first-time visitors (zero scary PNA prompts / console errors)
+  // - Auto-connects on mount only for returning Mac users who previously connected
+  // - Never hijacks users back to Local mode on tab focus
+  const refreshLocalHealth = useCallback(
+    async (opts?: { switchToLocal?: boolean }) => {
+      setCheckingLocal(true);
+      try {
+        const health = await checkLocalAiHealth();
         setLocalHealth(health);
         if (health?.ok && health.mfluxInstalled) {
-          setEngine("local");
+          writeLocalKnown();
           setGalleryDir(health.galleryDir);
           void refreshGallery();
+          if (opts?.switchToLocal) {
+            setEngine("local");
+          }
         }
-      });
-    };
-
-    // Check once on initial page load
-    performCheck();
-
-    // Event-driven: recheck immediately when user switches back to this browser tab
-    const handleFocus = () => {
-      if (document.visibilityState === "visible") {
-        performCheck();
+        return health;
+      } finally {
+        setCheckingLocal(false);
       }
-    };
+    },
+    [refreshGallery],
+  );
 
-    window.addEventListener("focus", handleFocus);
-    document.addEventListener("visibilitychange", handleFocus);
+  const tryConnectLocal = useCallback(async (): Promise<boolean> => {
+    const health = await refreshLocalHealth({ switchToLocal: true });
+    return Boolean(health?.ok && health.mfluxInstalled);
+  }, [refreshLocalHealth]);
 
+  useEffect(() => {
+    if (!readLocalKnown()) return;
+    let active = true;
+    checkLocalAiHealth().then((health) => {
+      if (!active) return;
+      setLocalHealth(health);
+      if (health?.ok && health.mfluxInstalled) {
+        setEngine("local");
+        setGalleryDir(health.galleryDir);
+        void refreshGallery();
+      }
+    });
     return () => {
       active = false;
-      window.removeEventListener("focus", handleFocus);
-      document.removeEventListener("visibilitychange", handleFocus);
     };
   }, [refreshGallery]);
 
@@ -222,6 +249,7 @@ export function useStudio() {
     setPublicId(result.public_id);
     setOriginalUrl(result.secure_url);
     setLocalBaseUrl(result.secure_url);
+    setActiveSamplePrompts([]);
     resetLocalEditState();
     setLayers([]);
     setAspectRatio("original");
@@ -237,6 +265,7 @@ export function useStudio() {
     setPublicId(null);
     setOriginalUrl(dataUrl);
     setLocalBaseUrl(dataUrl);
+    setActiveSamplePrompts([]);
     resetLocalEditState();
     setLayers([]);
     setAspectRatio("original");
@@ -248,6 +277,31 @@ export function useStudio() {
     setUploadError(null);
   };
 
+  /** Promote a locally-opened private photo to Cloudinary on-demand when the user wants Cloud Photoshop tools */
+  const promoteLocalPhotoToCloud = async () => {
+    if (publicId || !originalUrl || promotingToCloud) return;
+    setPromotingToCloud(true);
+    setUploadError(null);
+    try {
+      const file = await dataUrlToFile(originalUrl, "alterx-photo");
+      const result = await uploadImageToCloudinary(file);
+      setPublicId(result.public_id);
+      setOriginalUrl(result.secure_url);
+      if (!localResultUrl) {
+        setLocalBaseUrl(result.secure_url);
+      }
+      setEngine("cloud");
+    } catch (err) {
+      setUploadError(
+        err instanceof Error
+          ? err.message
+          : "Could not upload photo to Cloud Photoshop.",
+      );
+    } finally {
+      setPromotingToCloud(false);
+    }
+  };
+
   const handleUploadError = (error: Error) => {
     setUploadStatus("error");
     setUploadError(error.message);
@@ -257,6 +311,7 @@ export function useStudio() {
     setPublicId(sample.publicId);
     setOriginalUrl(sample.secureUrl);
     setLocalBaseUrl(sample.secureUrl);
+    setActiveSamplePrompts(sample.suggestedPrompts || []);
     resetLocalEditState();
     setAspectRatio("original");
     setActiveFilter("none");
@@ -298,6 +353,7 @@ export function useStudio() {
     setPublicId(null);
     setOriginalUrl(null);
     setLocalBaseUrl(null);
+    setActiveSamplePrompts([]);
     resetLocalEditState();
     setLayers([]);
     setHistory([]);
@@ -890,6 +946,9 @@ export function useStudio() {
     [layers],
   );
 
+  const isLocalGenerating =
+    localJob?.status === "queued" || localJob?.status === "running";
+
   return {
     // Source & upload
     uploadStatus,
@@ -898,6 +957,9 @@ export function useStudio() {
     originalUrl,
     originalPreviewUrl,
     hasPhoto,
+    activeSamplePrompts,
+    promotingToCloud,
+    promoteLocalPhotoToCloud,
     handleUploadStart,
     handleUploadSuccess,
     handleLocalOnlyUpload,
@@ -909,7 +971,10 @@ export function useStudio() {
     engine,
     setEngine,
     localHealth,
+    checkingLocal,
+    isLocalGenerating,
     refreshLocalHealth,
+    tryConnectLocal,
     localModel,
     setLocalModel,
     localResolution,

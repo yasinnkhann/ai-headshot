@@ -4,6 +4,8 @@
 
 set -euo pipefail
 
+export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+
 echo "==========================================="
 echo "  ✦ Alterx Local Mac AI Quickstart Engine  "
 echo "==========================================="
@@ -32,15 +34,23 @@ fi
 PYTHON_VER="$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
 echo "✅ Python $PYTHON_VER found: $(which python3)"
 
-# 3. Check mflux
-if ! command -v mflux-generate-flux2-edit &>/dev/null && [ ! -f "$HOME/.local/bin/mflux-generate-flux2-edit" ]; then
-  echo "📦 mflux not detected in PATH. Checking pip/uv..."
+# 3. Ensure mflux is installed
+if ! command -v mflux-generate-flux2-edit &>/dev/null && ! command -v mflux-generate-qwen-2.1-edit &>/dev/null; then
+  echo "📦 mflux not detected yet — installing automatically..."
   if command -v uv &>/dev/null; then
-    echo "⚡ Installing mflux via uv tool..."
-    uv tool install mflux || true
+    echo "⚡ Installing mflux via uv tool install mflux..."
+    uv tool install --upgrade mflux
+  elif command -v brew &>/dev/null; then
+    echo "⚡ Installing uv via Homebrew, then installing mflux..."
+    brew install uv
+    uv tool install --upgrade mflux
   elif command -v pip3 &>/dev/null; then
     echo "⚡ Installing mflux via pip3..."
-    pip3 install --user mflux || true
+    pip3 install --user --upgrade mflux
+  else
+    echo "❌ Could not find uv, brew, or pip3 to install mflux."
+    echo "   Install uv from https://docs.astral.sh/uv/ and run: uv tool install mflux"
+    exit 1
   fi
 fi
 
@@ -56,7 +66,7 @@ fi
 echo ""
 echo "🚀 Starting Alterx Local AI bridge on http://127.0.0.1:8787..."
 echo "📂 Your rendered photos will auto-save to: ~/Pictures/Alterx"
-echo "🌐 Open https://alterx.vercel.app to start creating!"
+echo "🌐 Open https://alterx.vercel.app and click 'Local Mac AI' to connect!"
 echo ""
 
 exec python3 "$SERVER_FILE"
