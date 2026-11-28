@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """
 Local AI Photo Studio Server (Apple Silicon MLX via mflux)
-Runs 100% locally on your Mac for $0 with unlimited photo edits.
+Runs 100% locally on your Mac for $0 with unlimited photo edits,
+brush masking, multi-photo compositing, 4K upscaling, local cutouts,
+and an auto-saved local gallery in ~/Pictures/AI-Photo-Studio.
 
 Start with:
   npm run local-ai
@@ -13,6 +15,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import random
 import re
 import shutil
 import subprocess
@@ -28,13 +31,29 @@ from typing import Any
 HOST = os.environ.get("LOCAL_AI_HOST", "127.0.0.1")
 PORT = int(os.environ.get("LOCAL_AI_PORT", "8787"))
 
-# Ensure uv tools bin directory is searchable even when launched from GUI/scripts
-EXTRA_PATH = str(Path.home() / ".local" / "bin")
-if EXTRA_PATH not in os.environ.get("PATH", ""):
-    os.environ["PATH"] = f"{EXTRA_PATH}:{os.environ.get('PATH', '')}"
+# Ensure uv tools & homebrew bins are searchable even when launched via LaunchAgent
+for extra in (
+    str(Path.home() / ".local" / "bin"),
+    "/opt/homebrew/bin",
+    "/usr/local/bin",
+):
+    if extra not in os.environ.get("PATH", ""):
+        os.environ["PATH"] = f"{extra}:{os.environ.get('PATH', '')}"
 
 TMP_DIR = Path(tempfile.gettempdir()) / "ai-photo-studio-local"
 TMP_DIR.mkdir(parents=True, exist_ok=True)
+
+GALLERY_DIR = Path(
+    os.environ.get(
+        "AI_STUDIO_GALLERY_DIR",
+        str(Path.home() / "Pictures" / "AI-Photo-Studio"),
+    )
+)
+GALLERY_DIR.mkdir(parents=True, exist_ok=True)
+
+LAUNCH_AGENT_PLIST = (
+    Path.home() / "Library" / "LaunchAgents" / "com.yasinkhan.ai-photo-studio.plist"
+)
 
 JOBS: dict[str, dict[str, Any]] = {}
 JOBS_LOCK = threading.Lock()
@@ -45,22 +64,41 @@ LOCAL_MODELS = {
     "flux2-klein-4b": {
         "id": "flux2-klein-4b",
         "name": "FLUX.2 Klein 4B (Fast)",
-        "description": "Fast 4-step local editing for creative prompts, scene swaps, and restyling (~20-60s on M1 Pro)",
+        "description": "Fast 4-step local editing & multi-photo compositing (~20-60s on M1 Pro)",
         "binary": "mflux-generate-flux2-edit",
         "default_steps": 4,
         "supports_auto_mask": False,
+        "supports_brush_mask": False,
         "supports_verify": False,
+        "supports_strength": False,
+        "supports_multi_image": True,
     },
     "qwen-2.1-turbo": {
         "id": "qwen-2.1-turbo",
         "name": "Qwen Image 2.1 Turbo (Max Accuracy)",
-        "description": "High-accuracy editing with optional object Auto-Mask & AI prompt enhancement (~1-3 min on M1 Pro)",
+        "description": "High-accuracy editing with brush masking, Auto-Mask, multi-photo refs & AI verify (~1-2 min)",
         "binary": "mflux-generate-qwen-2.1-edit",
         "default_steps": 8,
         "supports_auto_mask": True,
+        "supports_brush_mask": True,
         "supports_verify": True,
+        "supports_strength": True,
+        "supports_multi_image": True,
     },
 }
+
+STYLE_DIRECTIVES: dict[str, str] = {
+    "identity": "Strictly preserve the subject's exact facial geometry, skin texture, eye shape, and identity.",
+    "portrait": "Shot on 85mm f/1.4 prime lens, natural studio key lighting, crisp catchlights, editorial portrait photography.",
+    "cinematic": "Anamorphic 35mm cinematic film still, subtle halation, rich natural shadows, volumetric depth, realistic color grading.",
+    "storyboard": "Clean cinematic storyboard illustration frame, expressive ink lines, balanced visual storytelling composition.",
+    "illustration": "High-craft digital concept art illustration, painterly brushwork, cohesive lighting and rich detail.",
+}
+
+TQDM_PROGRESS_RE = re.compile(
+    r"(\d{1,3})%\|[^|]*\|\s*(\d+)/(\d+)\s*\[[^\]]*<([^,\]]+)"
+)
+SAFE_ID_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
 
 
 def find_binary(name: str) -> str | None:
@@ -84,22 +122,34 @@ def check_ollama() -> tuple[bool, list[str]]:
         return False, []
 
 
+def decode_image_source(source: str, dest_path: Path) -> None:
+    if source.startswith("data:") and "," in source:
+        _, b64 = source.split(",", 1)
+        dest_path.write_bytes(base64.b64decode(b64))
+        return
+
+    if source.startswith(("http://", "https://")):
+        req = urllib.request.Request(
+            source,
+            headers={"User-Agent": "AI-Photo-Studio-Local/2.0"},
+        )
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            dest_path.write_bytes(resp.read())
+        return
+
+    raise ValueError("Unsupported image source format")
+
+
 def decode_input_image(payload: dict[str, Any], dest_path: Path) -> None:
     image_data_url = payload.get("imageDataUrl")
     image_url = payload.get("imageUrl")
 
     if image_data_url and isinstance(image_data_url, str) and "," in image_data_url:
-        _, b64 = image_data_url.split(",", 1)
-        dest_path.write_bytes(base64.b64decode(b64))
+        decode_image_source(image_data_url, dest_path)
         return
 
     if image_url and isinstance(image_url, str) and image_url.startswith(("http://", "https://")):
-        req = urllib.request.Request(
-            image_url,
-            headers={"User-Agent": "AI-Photo-Studio-Local/1.0"},
-        )
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            dest_path.write_bytes(resp.read())
+        decode_image_source(image_url, dest_path)
         return
 
     raise ValueError("Missing valid imageDataUrl or imageUrl")
@@ -114,6 +164,116 @@ def parse_progress_line(line: str) -> str | None:
     return cleaned
 
 
+def save_to_gallery(
+    job_id: str,
+    image_bytes: bytes,
+    meta: dict[str, Any],
+) -> dict[str, Any]:
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    item_id = f"{stamp}_{job_id}"
+    img_path = GALLERY_DIR / f"{item_id}.png"
+    meta_path = GALLERY_DIR / f"{item_id}.json"
+
+    img_path.write_bytes(image_bytes)
+    record = {
+        "id": item_id,
+        "filename": img_path.name,
+        "createdAt": int(time.time() * 1000),
+        **meta,
+    }
+    meta_path.write_text(json.dumps(record, indent=2), encoding="utf-8")
+    return record
+
+
+def list_gallery_items(limit: int = 80) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    if not GALLERY_DIR.exists():
+        return items
+
+    for meta_file in sorted(GALLERY_DIR.glob("*.json"), reverse=True):
+        try:
+            data = json.loads(meta_file.read_text(encoding="utf-8"))
+            item_id = str(data.get("id") or meta_file.stem)
+            img_file = GALLERY_DIR / f"{item_id}.png"
+            if not img_file.exists():
+                continue
+            data["id"] = item_id
+            data["imageUrl"] = f"http://{HOST}:{PORT}/gallery/{item_id}/image"
+            items.append(data)
+            if len(items) >= limit:
+                break
+        except Exception:
+            continue
+    return items
+
+
+def delete_gallery_item(item_id: str) -> bool:
+    if not SAFE_ID_RE.match(item_id):
+        return False
+    removed = False
+    for ext in (".png", ".json"):
+        p = GALLERY_DIR / f"{item_id}{ext}"
+        if p.exists():
+            try:
+                p.unlink()
+                removed = True
+            except OSError:
+                pass
+    return removed
+
+
+def count_gallery_items() -> int:
+    if not GALLERY_DIR.exists():
+        return 0
+    return sum(1 for _ in GALLERY_DIR.glob("*.png"))
+
+
+def update_job_progress(job: dict[str, Any], cleaned: str) -> None:
+    lower = cleaned.lower()
+    m = TQDM_PROGRESS_RE.search(cleaned)
+
+    if "downloading" in lower or "fetching" in lower:
+        job["phase"] = "download"
+        if m:
+            pct, cur, total, eta = int(m.group(1)), int(m.group(2)), int(m.group(3)), m.group(4).strip()
+            job["progress"] = pct
+            job["step"] = cur
+            job["totalSteps"] = total
+            job["eta"] = None if eta == "?" else eta
+            job["stage"] = f"Downloading model weights ({cur}/{total} files) — cached locally forever..."
+        else:
+            job["stage"] = "First-time model download from Hugging Face (cached locally forever)..."
+        return
+
+    if "enhancing" in lower or "rewriting" in lower:
+        job["phase"] = "enhancing"
+        job["stage"] = "Auto-enhancing prompt with Qwen3-VL..."
+        return
+
+    if "verifying" in lower or "verify" in lower and ("pass" in lower or "fail" in lower or "check" in lower):
+        job["phase"] = "verifying"
+        job["stage"] = "AI Self-Verify inspecting output quality..."
+        return
+
+    if "decoding" in lower or "vae" in lower:
+        job["phase"] = "decoding"
+        job["progress"] = max(job.get("progress") or 0, 96)
+        job["eta"] = "00:05"
+        job["stage"] = "Decoding high-resolution image..."
+        return
+
+    if m:
+        pct, cur, total, eta = int(m.group(1)), int(m.group(2)), int(m.group(3)), m.group(4).strip()
+        job["phase"] = "generating"
+        job["progress"] = pct
+        job["step"] = cur
+        job["totalSteps"] = total
+        job["eta"] = None if eta == "?" else eta
+        job["stage"] = f"Rendering step {cur}/{total} on Apple Silicon GPU..."
+    elif "step" in lower or "%" in cleaned:
+        job["stage"] = cleaned[:110]
+
+
 def run_mflux_job(job_id: str, payload: dict[str, Any]) -> None:
     with GEN_SEMAPHORE:
         with JOBS_LOCK:
@@ -121,85 +281,203 @@ def run_mflux_job(job_id: str, payload: dict[str, Any]) -> None:
             if not job or job["status"] == "cancelled":
                 return
             job["status"] = "running"
+            job["phase"] = "preparing"
+            job["progress"] = 2
             job["stage"] = "Preparing input image..."
             job["startedAt"] = time.time()
 
         input_path = TMP_DIR / f"{job_id}_in.png"
         output_path = TMP_DIR / f"{job_id}_out.png"
+        temp_files: list[Path] = [input_path, output_path]
 
         try:
             decode_input_image(payload, input_path)
 
-            model_id = payload.get("model", "flux2-klein-4b")
-            if model_id not in LOCAL_MODELS:
-                model_id = "flux2-klein-4b"
-            spec = LOCAL_MODELS[model_id]
-            binary = find_binary(spec["binary"])
-            if not binary:
-                raise RuntimeError(
-                    f"'{spec['binary']}' not found. Run: uv tool install --python 3.12 --upgrade mflux"
-                )
-
-            prompt = str(payload.get("prompt", "")).strip()
-            if not prompt:
-                raise ValueError("Prompt cannot be empty")
-
-            steps = int(payload.get("steps") or spec["default_steps"])
-            quantize = int(payload.get("quantize") or 4)
-            resolution = int(payload.get("resolution") or 768)
-
-            cli_model = (
-                "flux2-klein-4b"
-                if model_id == "flux2-klein-4b"
-                else "qwen-image-2.1-turbo"
-            )
-            cmd: list[str] = [
-                binary,
-                "--model",
-                cli_model,
-                "--quantize",
-                str(quantize),
-                "--low-ram",
-                "--image-paths",
-                str(input_path),
-                "--prompt",
-                prompt,
-                "--steps",
-                str(steps),
-                "--output",
-                str(output_path),
-            ]
-
-            if model_id == "flux2-klein-4b":
-                cmd.append("--small-decoder")
-                if resolution:
-                    # Keep resolution bounded so 16GB M1 Pro stays snappy
-                    cmd.extend(["--width", str(resolution), "--height", str(resolution)])
+            operation = str(payload.get("operation") or "edit").strip().lower()
+            raw_seed = payload.get("seed")
+            if raw_seed is not None and str(raw_seed).strip().isdigit():
+                seed_val = int(str(raw_seed).strip())
             else:
-                cmd.extend(["--output-resolution", str(resolution)])
-                auto_mask = str(payload.get("autoMask") or "").strip()
-                if auto_mask:
-                    cmd.extend(["--auto-mask", auto_mask])
-                strength = payload.get("strength")
-                if strength is not None:
-                    try:
-                        s_val = max(0.1, min(1.0, float(strength)))
-                        if s_val < 0.99:
-                            cmd.extend(["--strength", f"{s_val:.2f}"])
-                    except (TypeError, ValueError):
-                        pass
-                if payload.get("enhancePrompt"):
-                    cmd.append("--enhance-prompt")
-                if payload.get("verify"):
-                    cmd.append("--verify")
-
-            seed = payload.get("seed")
-            if seed is not None and str(seed).strip().isdigit():
-                cmd.extend(["--seed", str(int(seed))])
+                seed_val = random.randint(1, 2_147_483_647)
 
             with JOBS_LOCK:
-                job["stage"] = f"Running {spec['name']} locally on Apple Silicon..."
-                job["logs"].append(f"Launching {spec['binary']} ({steps} steps, {quantize}-bit MLX)...")
+                job["seed"] = seed_val
+
+            prompt = str(payload.get("prompt") or "").strip()
+            negative_prompt = str(payload.get("negativePrompt") or "").strip()
+            style_mode = str(payload.get("styleMode") or "").strip().lower()
+            lora_path = str(payload.get("loraPath") or "").strip()
+            lora_scale = payload.get("loraScale")
+            auto_mask = str(payload.get("autoMask") or "").strip()
+            mask_data_url = payload.get("maskDataUrl")
+            ref_images = payload.get("referenceImages") or []
+            if not isinstance(ref_images, list):
+                ref_images = []
+
+            model_id = str(payload.get("model") or "flux2-klein-4b")
+            resolution = int(payload.get("resolution") or 768)
+            strength = payload.get("strength")
+            quantize = int(payload.get("quantize") or 4)
+            cmd: list[str] = []
+            launch_label = ""
+            saved_prompt = prompt
+
+            if operation == "upscale":
+                binary = find_binary("mflux-upscale-seedvr2")
+                if not binary:
+                    raise RuntimeError(
+                        "'mflux-upscale-seedvr2' not found. Run: uv tool install --python 3.12 --upgrade mflux"
+                    )
+                scale = str(payload.get("upscaleFactor") or "2x").strip() or "2x"
+                softness = float(payload.get("softness") or 0.0)
+                softness = max(0.0, min(1.0, softness))
+                cmd = [
+                    binary,
+                    "--model",
+                    "seedvr2-3b",
+                    "--quantize",
+                    str(quantize),
+                    "--low-ram",
+                    "--image-path",
+                    str(input_path),
+                    "--resolution",
+                    scale,
+                    "--softness",
+                    f"{softness:.2f}",
+                    "--seed",
+                    str(seed_val),
+                    "--output",
+                    str(output_path),
+                ]
+                model_id = "seedvr2-3b"
+                saved_prompt = f"Local AI Super-Upscale ({scale})"
+                launch_label = f"SeedVR2 3B Super-Resolution ({scale}, {quantize}-bit MLX)"
+
+            elif operation == "cutout":
+                binary = find_binary("mflux-generate-fibo-edit")
+                if not binary:
+                    raise RuntimeError(
+                        "'mflux-generate-fibo-edit' not found. Run: uv tool install --python 3.12 --upgrade mflux"
+                    )
+                steps = int(payload.get("steps") or 8)
+                cmd = [
+                    binary,
+                    "--model",
+                    "fibo-edit-rmbg",
+                    "--quantize",
+                    str(quantize),
+                    "--low-ram",
+                    "--image-path",
+                    str(input_path),
+                    "--steps",
+                    str(steps),
+                    "--seed",
+                    str(seed_val),
+                    "--output",
+                    str(output_path),
+                ]
+                model_id = "fibo-edit-rmbg"
+                saved_prompt = "Local AI Transparent PNG Cutout"
+                launch_label = f"FIBO RMBG Cutout ({steps} steps, {quantize}-bit MLX)"
+
+            else:
+                # Standard local edit (FLUX.2 Klein 4B or Qwen 2.1 Turbo)
+                if not prompt:
+                    raise ValueError("Prompt cannot be empty")
+                if model_id not in LOCAL_MODELS:
+                    model_id = "flux2-klein-4b"
+                spec = LOCAL_MODELS[model_id]
+                binary = find_binary(spec["binary"])
+                if not binary:
+                    raise RuntimeError(
+                        f"'{spec['binary']}' not found. Run: uv tool install --python 3.12 --upgrade mflux"
+                    )
+
+                effective_prompt = prompt
+                if style_mode and style_mode in STYLE_DIRECTIVES:
+                    effective_prompt = f"{prompt}. {STYLE_DIRECTIVES[style_mode]}"
+
+                # Decode optional additional reference images for multi-photo compositing
+                image_paths_args: list[str] = [str(input_path)]
+                for idx, ref_src in enumerate(ref_images[:3]):
+                    if isinstance(ref_src, str) and ref_src.strip():
+                        ref_path = TMP_DIR / f"{job_id}_ref_{idx}.png"
+                        decode_image_source(ref_src.strip(), ref_path)
+                        temp_files.append(ref_path)
+                        image_paths_args.append(str(ref_path))
+
+                steps = int(payload.get("steps") or spec["default_steps"])
+                cli_model = (
+                    "flux2-klein-4b"
+                    if model_id == "flux2-klein-4b"
+                    else "qwen-image-2.1-turbo"
+                )
+                cmd = [
+                    binary,
+                    "--model",
+                    cli_model,
+                    "--quantize",
+                    str(quantize),
+                    "--low-ram",
+                    "--image-paths",
+                    *image_paths_args,
+                    "--prompt",
+                    effective_prompt,
+                    "--steps",
+                    str(steps),
+                    "--seed",
+                    str(seed_val),
+                    "--output",
+                    str(output_path),
+                ]
+
+                if negative_prompt:
+                    cmd.extend(["--negative-prompt", negative_prompt])
+
+                if lora_path:
+                    scale_str = "1.0"
+                    if lora_scale is not None:
+                        try:
+                            scale_str = f"{max(0.1, min(2.0, float(lora_scale))):.2f}"
+                        except (TypeError, ValueError):
+                            pass
+                    cmd.extend(["--lora", lora_path, scale_str])
+
+                if model_id == "flux2-klein-4b":
+                    cmd.append("--small-decoder")
+                    if resolution:
+                        cmd.extend(["--width", str(resolution), "--height", str(resolution)])
+                else:
+                    cmd.extend(["--output-resolution", str(resolution)])
+                    # On Qwen 2.1 Turbo, guidance > 1 is required for --negative-prompt to take effect
+                    if negative_prompt:
+                        cmd.extend(["--guidance", "2.5"])
+
+                    if mask_data_url and isinstance(mask_data_url, str) and "," in mask_data_url:
+                        mask_path = TMP_DIR / f"{job_id}_mask.png"
+                        decode_image_source(mask_data_url, mask_path)
+                        temp_files.append(mask_path)
+                        cmd.extend(["--mask-image", str(mask_path)])
+                    elif auto_mask:
+                        cmd.extend(["--auto-mask", auto_mask])
+
+                    if strength is not None:
+                        try:
+                            s_val = max(0.1, min(1.0, float(strength)))
+                            if s_val < 0.99:
+                                cmd.extend(["--strength", f"{s_val:.2f}"])
+                        except (TypeError, ValueError):
+                            pass
+                    if payload.get("enhancePrompt"):
+                        cmd.append("--enhance-prompt")
+                    if payload.get("verify"):
+                        cmd.append("--verify")
+
+                launch_label = f"{spec['name']} ({steps} steps, seed {seed_val}, {quantize}-bit MLX)"
+
+            with JOBS_LOCK:
+                job["stage"] = f"Running {launch_label}..."
+                job["logs"].append(f"Launching {launch_label}...")
 
             proc = subprocess.Popen(
                 cmd,
@@ -219,15 +497,9 @@ def run_mflux_job(job_id: str, payload: dict[str, Any]) -> None:
                     if job["status"] == "cancelled":
                         break
                     job["logs"].append(cleaned)
-                    if len(job["logs"]) > 40:
-                        job["logs"] = job["logs"][-40:]
-                    lower = cleaned.lower()
-                    if "downloading" in lower or "fetching" in lower:
-                        job["stage"] = "First-time model download from Hugging Face (cached locally forever)..."
-                    elif "step" in lower or "%" in cleaned:
-                        job["stage"] = cleaned[:110]
-                    elif "decoding" in lower or "vae" in lower:
-                        job["stage"] = "Decoding high-resolution image..."
+                    if len(job["logs"]) > 50:
+                        job["logs"] = job["logs"][-50:]
+                    update_job_progress(job, cleaned)
 
             ret = proc.wait()
             ACTIVE_PROCESSES.pop(job_id, None)
@@ -238,27 +510,55 @@ def run_mflux_job(job_id: str, payload: dict[str, Any]) -> None:
 
             if ret != 0 or not output_path.exists():
                 with JOBS_LOCK:
-                    tail = " | ".join(job["logs"][-4:])
+                    tail = " | ".join(job["logs"][-5:])
                 raise RuntimeError(f"mflux exited with code {ret}. {tail}")
 
             out_bytes = output_path.read_bytes()
             data_url = "data:image/png;base64," + base64.b64encode(out_bytes).decode("ascii")
+            finished_at = time.time()
+            elapsed = round(finished_at - (job.get("startedAt") or finished_at), 1)
+
+            gallery_item = save_to_gallery(
+                job_id,
+                out_bytes,
+                {
+                    "prompt": saved_prompt,
+                    "negativePrompt": negative_prompt,
+                    "model": model_id,
+                    "operation": operation,
+                    "seed": seed_val,
+                    "strength": strength if strength is not None else 1.0,
+                    "resolution": resolution,
+                    "styleMode": style_mode,
+                    "loraPath": lora_path,
+                    "autoMask": auto_mask,
+                    "hadBrushMask": bool(mask_data_url),
+                    "referenceCount": len(ref_images),
+                    "elapsed": elapsed,
+                },
+            )
+            gallery_item["imageUrl"] = f"http://{HOST}:{PORT}/gallery/{gallery_item['id']}/image"
 
             with JOBS_LOCK:
                 job["status"] = "done"
+                job["phase"] = "done"
+                job["progress"] = 100
+                job["eta"] = "00:00"
                 job["stage"] = "Complete"
                 job["imageDataUrl"] = data_url
-                job["finishedAt"] = time.time()
+                job["galleryItem"] = gallery_item
+                job["finishedAt"] = finished_at
 
         except Exception as exc:
             ACTIVE_PROCESSES.pop(job_id, None)
             with JOBS_LOCK:
                 if job_id in JOBS and JOBS[job_id]["status"] != "cancelled":
                     JOBS[job_id]["status"] = "error"
+                    JOBS[job_id]["phase"] = "error"
                     JOBS[job_id]["error"] = str(exc)
                     JOBS[job_id]["finishedAt"] = time.time()
         finally:
-            for p in (input_path, output_path):
+            for p in temp_files:
                 try:
                     if p.exists():
                         p.unlink()
@@ -272,8 +572,18 @@ def parse_prompt_with_ollama(prompt: str) -> list[dict[str, Any]] | None:
         return None
 
     lower = prompt.lower()
-    # Fantasy or full-scene prompts should use full-scene Local Mac AI, not surgical micro-layers
-    fantasy_kws = ["jedi", "sith", "lightsaber", "superhero", "cyborg", "anime", "pixar", "warrior", "knight", "robot"]
+    fantasy_kws = [
+        "jedi",
+        "sith",
+        "lightsaber",
+        "superhero",
+        "cyborg",
+        "anime",
+        "pixar",
+        "warrior",
+        "knight",
+        "robot",
+    ]
     if any(k in lower for k in fantasy_kws):
         return []
 
@@ -318,7 +628,6 @@ def parse_prompt_with_ollama(prompt: str) -> list[dict[str, Any]] | None:
             if isinstance(parsed, dict) and "layers" in parsed:
                 parsed = parsed["layers"]
             if isinstance(parsed, list):
-                # Clean up any bad placeholders
                 cleaned: list[dict[str, Any]] = []
                 for item in parsed[:3]:
                     if not isinstance(item, dict):
@@ -336,13 +645,12 @@ def parse_prompt_with_ollama(prompt: str) -> list[dict[str, Any]] | None:
 
 class StudioHandler(BaseHTTPRequestHandler):
     def log_message(self, format: str, *args: Any) -> None:
-        # Keep terminal clean and informative
         print(f"[Local AI] {self.address_string()} - {format % args}")
 
     def _send_cors_headers(self) -> None:
         origin = self.headers.get("Origin") or "*"
         self.send_header("Access-Control-Allow-Origin", origin)
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
         self.send_header("Access-Control-Allow-Private-Network", "true")
         self.send_header("Vary", "Origin")
@@ -355,6 +663,15 @@ class StudioHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(raw)))
         self.end_headers()
         self.wfile.write(raw)
+
+    def _send_bytes(self, status: int, content_type: str, data: bytes) -> None:
+        self.send_response(status)
+        self._send_cors_headers()
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "public, max-age=31536000, immutable")
+        self.end_headers()
+        self.wfile.write(data)
 
     def _read_json(self) -> dict[str, Any]:
         length = int(self.headers.get("Content-Length", "0"))
@@ -369,18 +686,23 @@ class StudioHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self) -> None:
-        if self.path == "/health":
+        path = self.path.split("?", 1)[0]
+
+        if path == "/health":
             available_models = []
-            for key, spec in LOCAL_MODELS.items():
+            for model_id, spec in LOCAL_MODELS.items():
                 available_models.append(
                     {
-                        "id": key,
+                        "id": model_id,
                         "name": spec["name"],
                         "description": spec["description"],
                         "installed": find_binary(spec["binary"]) is not None,
                         "defaultSteps": spec["default_steps"],
                         "supportsAutoMask": spec["supports_auto_mask"],
+                        "supportsBrushMask": spec["supports_brush_mask"],
                         "supportsVerify": spec["supports_verify"],
+                        "supportsStrength": spec["supports_strength"],
+                        "supportsMultiImage": spec["supports_multi_image"],
                     }
                 )
             ollama_ok, ollama_models = check_ollama()
@@ -390,14 +712,41 @@ class StudioHandler(BaseHTTPRequestHandler):
                     "ok": True,
                     "mfluxInstalled": any(m["installed"] for m in available_models),
                     "models": available_models,
+                    "upscalerInstalled": find_binary("mflux-upscale-seedvr2") is not None,
+                    "cutoutInstalled": find_binary("mflux-generate-fibo-edit") is not None,
+                    "galleryDir": str(GALLERY_DIR),
+                    "galleryCount": count_gallery_items(),
+                    "autoStartInstalled": LAUNCH_AGENT_PLIST.exists(),
                     "ollama": {"connected": ollama_ok, "models": ollama_models},
                     "busy": len(ACTIVE_PROCESSES) > 0,
                 },
             )
             return
 
-        if self.path.startswith("/jobs/"):
-            job_id = self.path.split("/jobs/", 1)[1].split("?")[0].strip("/")
+        if path == "/gallery":
+            self._send_json(
+                200,
+                {
+                    "dir": str(GALLERY_DIR),
+                    "items": list_gallery_items(),
+                },
+            )
+            return
+
+        if path.startswith("/gallery/") and path.endswith("/image"):
+            item_id = path.removeprefix("/gallery/").removesuffix("/image").strip("/")
+            if not SAFE_ID_RE.match(item_id):
+                self._send_json(400, {"error": "Invalid gallery ID"})
+                return
+            img_path = GALLERY_DIR / f"{item_id}.png"
+            if not img_path.exists():
+                self._send_json(404, {"error": "Image not found"})
+                return
+            self._send_bytes(200, "image/png", img_path.read_bytes())
+            return
+
+        if path.startswith("/jobs/"):
+            job_id = path.split("/jobs/", 1)[1].strip("/")
             with JOBS_LOCK:
                 job = JOBS.get(job_id)
                 if not job:
@@ -408,10 +757,17 @@ class StudioHandler(BaseHTTPRequestHandler):
                 resp = {
                     "jobId": job_id,
                     "status": job["status"],
+                    "phase": job.get("phase", "queued"),
                     "stage": job.get("stage", ""),
+                    "progress": job.get("progress"),
+                    "step": job.get("step"),
+                    "totalSteps": job.get("totalSteps"),
+                    "eta": job.get("eta"),
+                    "seed": job.get("seed"),
                     "elapsed": round(now - started, 1),
-                    "logs": job.get("logs", [])[-12:],
+                    "logs": job.get("logs", [])[-14:],
                     "imageDataUrl": job.get("imageDataUrl"),
+                    "galleryItem": job.get("galleryItem"),
                     "error": job.get("error"),
                 }
             self._send_json(200, resp)
@@ -419,15 +775,29 @@ class StudioHandler(BaseHTTPRequestHandler):
 
         self._send_json(404, {"error": "Not found"})
 
+    def do_DELETE(self) -> None:
+        path = self.path.split("?", 1)[0]
+        if path.startswith("/gallery/"):
+            item_id = path.removeprefix("/gallery/").strip("/")
+            if delete_gallery_item(item_id):
+                self._send_json(200, {"ok": True, "deleted": item_id})
+            else:
+                self._send_json(404, {"error": "Gallery item not found"})
+            return
+        self._send_json(404, {"error": "Not found"})
+
     def do_POST(self) -> None:
-        if self.path == "/edit":
+        path = self.path.split("?", 1)[0]
+
+        if path == "/edit":
             try:
                 payload = self._read_json()
             except Exception as exc:
                 self._send_json(400, {"error": f"Invalid JSON: {exc}"})
                 return
 
-            if not payload.get("prompt", "").strip():
+            operation = str(payload.get("operation") or "edit").strip().lower()
+            if operation == "edit" and not str(payload.get("prompt", "")).strip():
                 self._send_json(400, {"error": "Prompt is required"})
                 return
 
@@ -435,7 +805,13 @@ class StudioHandler(BaseHTTPRequestHandler):
             with JOBS_LOCK:
                 JOBS[job_id] = {
                     "status": "queued",
+                    "phase": "queued",
                     "stage": "Queued for Apple Silicon GPU...",
+                    "progress": 0,
+                    "step": None,
+                    "totalSteps": None,
+                    "eta": None,
+                    "seed": None,
                     "logs": [],
                     "createdAt": time.time(),
                 }
@@ -449,11 +825,12 @@ class StudioHandler(BaseHTTPRequestHandler):
             self._send_json(202, {"jobId": job_id})
             return
 
-        if self.path.startswith("/jobs/") and self.path.endswith("/cancel"):
-            job_id = self.path.removeprefix("/jobs/").removesuffix("/cancel").strip("/")
+        if path.startswith("/jobs/") and path.endswith("/cancel"):
+            job_id = path.removeprefix("/jobs/").removesuffix("/cancel").strip("/")
             with JOBS_LOCK:
                 if job_id in JOBS:
                     JOBS[job_id]["status"] = "cancelled"
+                    JOBS[job_id]["phase"] = "cancelled"
                     JOBS[job_id]["stage"] = "Cancelled by user"
                     JOBS[job_id]["finishedAt"] = time.time()
             proc = ACTIVE_PROCESSES.pop(job_id, None)
@@ -462,7 +839,15 @@ class StudioHandler(BaseHTTPRequestHandler):
             self._send_json(200, {"ok": True, "cancelled": job_id})
             return
 
-        if self.path == "/parse-prompt":
+        if path == "/gallery/open-folder":
+            try:
+                subprocess.Popen(["open", str(GALLERY_DIR)])
+                self._send_json(200, {"ok": True, "dir": str(GALLERY_DIR)})
+            except Exception as exc:
+                self._send_json(500, {"error": str(exc)})
+            return
+
+        if path == "/parse-prompt":
             try:
                 payload = self._read_json()
             except Exception:
@@ -485,12 +870,15 @@ def main() -> None:
     print(f"✨ AI Photo Studio Local MLX Server listening on http://{HOST}:{PORT}")
     print(f"   mflux-generate-flux2-edit:    {find_binary('mflux-generate-flux2-edit') or 'NOT FOUND'}")
     print(f"   mflux-generate-qwen-2.1-edit: {find_binary('mflux-generate-qwen-2.1-edit') or 'NOT FOUND'}")
+    print(f"   mflux-upscale-seedvr2:        {find_binary('mflux-upscale-seedvr2') or 'NOT FOUND'}")
+    print(f"   mflux-generate-fibo-edit:     {find_binary('mflux-generate-fibo-edit') or 'NOT FOUND'}")
+    print(f"   Auto-saved gallery folder:    {GALLERY_DIR}")
     ollama_ok, ollama_models = check_ollama()
-    print(f"   Ollama smart parser:          {'connected (' + ', '.join(ollama_models[:3]) + ')' if ollama_ok else 'not running'}")
+    print(f"   Ollama smart parser:          {'connected (' + ', '.join(ollama_models) + ')' if ollama_ok else 'offline'}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        print("\nShutting down Local AI server.")
+        print("\nShutting down Local AI Photo Studio Server...")
         server.server_close()
 
 

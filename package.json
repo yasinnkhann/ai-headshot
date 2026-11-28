@@ -9,6 +9,8 @@
 	"scripts": {
 		"dev": "vite",
 		"local-ai": "python3 local-server/server.py",
+		"local-ai:install-autostart": "bash local-server/install-autostart.sh",
+		"local-ai:uninstall-autostart": "bash local-server/uninstall-autostart.sh",
 		"studio:local": "python3 local-server/server.py & vite",
 		"build": "tsc -b && vite build",
 		"lint": "eslint .",

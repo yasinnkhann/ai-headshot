@@ -6,6 +6,7 @@ interface BeforeAfterSliderProps {
   afterImageUrl: string;
   beforeAlt?: string;
   afterAlt?: string;
+  beforeLabel?: string;
   className?: string;
   afterStyle?: React.CSSProperties;
   afterOverlay?: React.ReactNode;
@@ -16,6 +17,7 @@ export function BeforeAfterSlider({
   afterImageUrl,
   beforeAlt = "Original photo",
   afterAlt = "AI enhanced headshot",
+  beforeLabel = "Before",
   className = "",
   afterStyle,
   afterOverlay,
@@ -101,7 +103,7 @@ export function BeforeAfterSlider({
 
       {/* BADGES */}
       <div className="pointer-events-none absolute top-3 left-3 z-10 rounded-full bg-black/60 px-3 py-1 text-xs font-medium text-white backdrop-blur-md border border-white/10 shadow-md">
-        Before
+        {beforeLabel}
       </div>
 
       <div className="pointer-events-none absolute top-3 right-3 z-10 flex items-center gap-1.5 rounded-full bg-indigo-600/90 px-3 py-1 text-xs font-medium text-white backdrop-blur-md border border-indigo-400/30 shadow-md">

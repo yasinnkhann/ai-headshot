@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type {
   AspectRatio,
   EditEngine,
@@ -6,6 +6,9 @@ import type {
   LocalAiHealth,
   LocalEditJobStatus,
   LocalModelId,
+  LocalOperation,
+  LocalReferenceImage,
+  LocalStyleMode,
   MicroTuningSettings,
   PhotoLayer,
   PhotoLayerInput,
@@ -15,6 +18,7 @@ import type {
 } from "../types";
 import { AsyncHeadshotImage } from "./AsyncHeadshotImage";
 import { BeforeAfterSlider } from "./BeforeAfterSlider";
+import { BrushMaskEditor } from "./BrushMaskEditor";
 import { LinkedInSimulator } from "./LinkedInSimulator";
 import { MicroTuningPanel } from "./MicroTuningPanel";
 import { PortraitFilterBar } from "./PortraitFilterBar";
@@ -27,21 +31,30 @@ import {
 import { cn } from "../lib/utils";
 import {
   AlertCircle,
+  Bell,
+  BellOff,
+  Brush,
   Check,
+  ChevronDown,
+  ChevronUp,
   ChevronsLeftRight,
   Clock,
   Columns2,
   Copy,
   Cpu,
+  Dices,
   Download,
   Eraser,
   Expand,
   Eye,
   EyeOff,
   Image as ImageIcon,
+  ImagePlus,
+  Images,
   Infinity as InfinityIcon,
   Layers,
   Loader2,
+  Lock,
   Palette,
   RefreshCw,
   Replace,
@@ -52,9 +65,11 @@ import {
   Square,
   Terminal,
   Trash2,
+  Unlock,
   Wand2,
   X,
   Zap,
+  ZoomIn,
 } from "lucide-react";
 
 type CloudToolMode =
@@ -75,6 +90,7 @@ interface PhotoStudioProps {
   activeResultUrl: string | null;
   cloudResultUrl: string | null;
   localResultUrl: string | null;
+  localPreviousResultUrl: string | null;
   hasCloudEdits: boolean;
 
   // Engine & Local Mac AI
@@ -86,18 +102,50 @@ interface PhotoStudioProps {
   onLocalModelChange: (model: LocalModelId) => void;
   localResolution: number;
   onLocalResolutionChange: (res: number) => void;
+  localStrength: number;
+  onLocalStrengthChange: (strength: number) => void;
   localAutoMask: string;
   onLocalAutoMaskChange: (mask: string) => void;
+  localMaskDataUrl: string | null;
+  localMaskPreviewUrl: string | null;
+  onSaveBrushMask: (maskDataUrl: string, previewDataUrl: string) => void;
+  onClearBrushMask: () => void;
+  localReferenceImages: LocalReferenceImage[];
+  onAddReferenceFiles: (files: FileList | File[]) => Promise<void>;
+  onRemoveReferenceImage: (id: string) => void;
+  onClearReferenceImages: () => void;
+  localNegativePrompt: string;
+  onLocalNegativePromptChange: (v: string) => void;
+  localStyleMode: LocalStyleMode;
+  onLocalStyleModeChange: (style: LocalStyleMode) => void;
+  localLoraPath: string;
+  onLocalLoraPathChange: (v: string) => void;
+  localLoraScale: number;
+  onLocalLoraScaleChange: (v: number) => void;
+  localSeed: string;
+  onLocalSeedChange: (v: string) => void;
+  localSeedLocked: boolean;
+  onLocalSeedLockedChange: (v: boolean) => void;
+  localLastSeed: number | null;
   localEnhancePrompt: boolean;
   onLocalEnhancePromptChange: (v: boolean) => void;
   localVerify: boolean;
   onLocalVerifyChange: (v: boolean) => void;
+  soundAlertsEnabled: boolean;
+  onSoundAlertsEnabledChange: (v: boolean) => void;
+  onRequestDesktopNotifications: () => Promise<void>;
   localJob: LocalEditJobStatus | null;
   localLastPrompt: string;
+  localLastOperation: LocalOperation;
   chainLocalEdits: boolean;
   onChainLocalEditsChange: (v: boolean) => void;
   onRunLocalPrompt: (prompt: string) => void;
+  onRegenerateLocalEdit: () => void;
+  onRunLocalUpscale: (scale?: string) => void;
+  onRunLocalCutout: () => void;
   onCancelLocalJob: () => void;
+  onOpenGallery: () => void;
+  galleryCount: number;
 
   // Cloud layers & presets
   layers: PhotoLayer[];
@@ -124,6 +172,20 @@ interface PhotoStudioProps {
   onRemoveHistory: (id: string) => void;
 }
 
+const LOCAL_STYLE_OPTIONS: Array<{ id: LocalStyleMode; label: string }> = [
+  { id: "", label: "Natural" },
+  { id: "identity", label: "Identity Lock" },
+  { id: "portrait", label: "Portrait Pro" },
+  { id: "cinematic", label: "Cinematic 35mm" },
+  { id: "storyboard", label: "Storyboard" },
+  { id: "illustration", label: "Illustration" },
+];
+
+const QUICK_NEGATIVE_PRESETS = [
+  "distorted hands, extra fingers, blurry face, plastic skin, watermark",
+  "low quality, artifacts, deformed anatomy, oversaturated",
+];
+
 const QUICK_COLOR_SWATCHES = [
   { name: "Crimson", value: "crimson", hex: "#dc2626" },
   { name: "Navy", value: "navy", hex: "#1e3a8a" },
@@ -149,6 +211,7 @@ export function PhotoStudio({
   activeResultUrl,
   cloudResultUrl,
   localResultUrl,
+  localPreviousResultUrl,
   hasCloudEdits,
   engine,
   onEngineChange,
@@ -158,18 +221,50 @@ export function PhotoStudio({
   onLocalModelChange,
   localResolution,
   onLocalResolutionChange,
+  localStrength,
+  onLocalStrengthChange,
   localAutoMask,
   onLocalAutoMaskChange,
+  localMaskDataUrl,
+  localMaskPreviewUrl,
+  onSaveBrushMask,
+  onClearBrushMask,
+  localReferenceImages,
+  onAddReferenceFiles,
+  onRemoveReferenceImage,
+  onClearReferenceImages,
+  localNegativePrompt,
+  onLocalNegativePromptChange,
+  localStyleMode,
+  onLocalStyleModeChange,
+  localLoraPath,
+  onLocalLoraPathChange,
+  localLoraScale,
+  onLocalLoraScaleChange,
+  localSeed,
+  onLocalSeedChange,
+  localSeedLocked,
+  onLocalSeedLockedChange,
+  localLastSeed,
   localEnhancePrompt,
   onLocalEnhancePromptChange,
   localVerify,
   onLocalVerifyChange,
+  soundAlertsEnabled,
+  onSoundAlertsEnabledChange,
+  onRequestDesktopNotifications,
   localJob,
   localLastPrompt,
+  localLastOperation,
   chainLocalEdits,
   onChainLocalEditsChange,
   onRunLocalPrompt,
+  onRegenerateLocalEdit,
+  onRunLocalUpscale,
+  onRunLocalCutout,
   onCancelLocalJob,
+  onOpenGallery,
+  galleryCount,
   layers,
   estimatedCredits,
   onAddLayer,
@@ -192,6 +287,9 @@ export function PhotoStudio({
   const [viewMode, setViewMode] = useState<
     "slider" | "result" | "side" | "linkedin"
   >("slider");
+  const [compareTarget, setCompareTarget] = useState<"original" | "previous">(
+    "original",
+  );
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>("layers");
   const [presetCategory, setPresetCategory] = useState<"all" | PresetCategory>(
     "all",
@@ -200,8 +298,11 @@ export function PhotoStudio({
     () => new Set(),
   );
 
-  // Prompt bar states
+  // Prompt bar & modal states
   const [localPrompt, setLocalPrompt] = useState("");
+  const [brushMaskOpen, setBrushMaskOpen] = useState(false);
+  const [showProControls, setShowProControls] = useState(false);
+  const refFileInputRef = useRef<HTMLInputElement | null>(null);
   const [cloudTool, setCloudTool] = useState<CloudToolMode>("smart");
   const [smartPrompt, setSmartPrompt] = useState("");
   const [parsingSmart, setParsingSmart] = useState(false);
@@ -298,7 +399,34 @@ export function PhotoStudio({
               : "aspect-[4/3] sm:aspect-[4/3]";
 
   const hasTransparentCutout =
-    engine === "cloud" && layers.some((l) => l.enabled && l.type === "cutout");
+    (engine === "cloud" && layers.some((l) => l.enabled && l.type === "cutout")) ||
+    (engine === "local" && localLastOperation === "cutout" && Boolean(localResultUrl));
+
+  const canComparePrevious =
+    engine === "local" &&
+    Boolean(localPreviousResultUrl) &&
+    localPreviousResultUrl !== originalPreviewUrl &&
+    localPreviousResultUrl !== activeResultUrl;
+
+  const effectiveBeforeUrl =
+    canComparePrevious && compareTarget === "previous" && localPreviousResultUrl
+      ? localPreviousResultUrl
+      : originalPreviewUrl;
+
+  const effectiveBeforeLabel =
+    canComparePrevious && compareTarget === "previous"
+      ? "Previous Step"
+      : "Original";
+
+  const maskSourceImageUrl =
+    chainLocalEdits && localResultUrl ? localResultUrl : originalPreviewUrl;
+
+  const activeProCount =
+    (localStrength < 0.99 ? 1 : 0) +
+    (localSeedLocked || localSeed.trim() ? 1 : 0) +
+    (localNegativePrompt.trim() ? 1 : 0) +
+    (localLoraPath.trim() ? 1 : 0) +
+    (localAutoMask.trim() && !localMaskDataUrl ? 1 : 0);
 
   return (
     <main className="mx-auto max-w-7xl px-4 py-6 pb-16">
@@ -427,20 +555,86 @@ export function PhotoStudio({
                 </div>
 
                 <h3 className="text-base font-semibold text-white">
-                  Editing Locally on Your Apple Silicon GPU
+                  {localJob.phase === "download"
+                    ? "Downloading Model Weights (One-Time Cache)"
+                    : "Rendering Locally on Your Apple Silicon GPU"}
                 </h3>
                 <p className="mt-1.5 max-w-md text-xs text-emerald-300/90">
                   {localJob.stage || "Processing with MLX..."}
                 </p>
 
-                <div className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-white/5 px-3 py-1 text-xs text-white/70 border border-white/10">
-                  <Clock className="h-3.5 w-3.5 text-emerald-400" />
-                  <span>{localJob.elapsed}s elapsed · $0 unlimited</span>
+                {/* Real Visual Progress Bar + ETA */}
+                <div className="mt-4 w-full max-w-md space-y-2">
+                  <div className="flex items-center justify-between text-[11px] font-medium">
+                    <span className="text-white/75">
+                      {localJob.step && localJob.totalSteps
+                        ? localJob.phase === "download"
+                          ? `File ${localJob.step} / ${localJob.totalSteps}`
+                          : `Step ${localJob.step} / ${localJob.totalSteps}`
+                        : localJob.phase === "decoding"
+                          ? "Decoding high-res output"
+                          : "Initializing MLX graph..."}
+                    </span>
+                    <span className="font-mono text-emerald-300">
+                      {typeof localJob.progress === "number"
+                        ? `${localJob.progress}%`
+                        : "Starting..."}
+                      {localJob.eta ? ` · ~${localJob.eta} left` : ""}
+                    </span>
+                  </div>
+                  <div className="h-2.5 w-full overflow-hidden rounded-full bg-white/10 border border-white/10">
+                    <div
+                      className={cn(
+                        "h-full rounded-full transition-all duration-500",
+                        localJob.phase === "download"
+                          ? "bg-gradient-to-r from-indigo-500 to-cyan-400"
+                          : "bg-gradient-to-r from-emerald-500 via-teal-400 to-indigo-400",
+                        typeof localJob.progress !== "number" && "animate-pulse",
+                      )}
+                      style={{
+                        width: `${Math.max(4, localJob.progress ?? 12)}%`,
+                      }}
+                    />
+                  </div>
+                </div>
+
+                <div className="mt-3.5 flex flex-wrap items-center justify-center gap-2 text-[11px]">
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-white/5 px-3 py-1 text-white/75 border border-white/10">
+                    <Clock className="h-3.5 w-3.5 text-emerald-400" />
+                    <span>{localJob.elapsed}s elapsed · $0 unlimited</span>
+                  </span>
+                  {typeof localJob.seed === "number" && (
+                    <span className="rounded-full bg-white/5 px-2.5 py-1 font-mono text-white/60 border border-white/10">
+                      Seed #{localJob.seed}
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = !soundAlertsEnabled;
+                      onSoundAlertsEnabledChange(next);
+                      if (next) void onRequestDesktopNotifications();
+                    }}
+                    className={cn(
+                      "inline-flex items-center gap-1 rounded-full px-2.5 py-1 border transition cursor-pointer",
+                      soundAlertsEnabled
+                        ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+                        : "border-white/10 bg-white/5 text-white/45",
+                    )}
+                    title="Chime + browser notification when render finishes"
+                  >
+                    {soundAlertsEnabled ? (
+                      <Bell className="h-3 w-3" />
+                    ) : (
+                      <BellOff className="h-3 w-3" />
+                    )}
+                    {soundAlertsEnabled ? "Done Alert ON" : "Alerts Muted"}
+                  </button>
                 </div>
 
                 {localJob.logs.length > 0 && (
-                  <div className="mt-4 w-full max-w-lg rounded-lg bg-black/70 p-3 text-left font-mono text-[10px] text-white/60 border border-white/10 max-h-28 overflow-y-auto">
-                    {localJob.logs.slice(-5).map((line, i) => (
+                  <div className="mt-4 w-full max-w-lg rounded-lg bg-black/70 p-3 text-left font-mono text-[10px] text-white/60 border border-white/10 max-h-24 overflow-y-auto">
+                    {localJob.logs.slice(-4).map((line, i) => (
                       <div key={i} className="truncate">
                         {line}
                       </div>
@@ -556,49 +750,113 @@ export function PhotoStudio({
                       <div style={vignetteStyle} />
                     </div>
                   ) : viewMode === "side" ? (
-                    <div className="grid gap-5 md:grid-cols-2">
-                      <div>
-                        <p className="mb-2 text-xs font-medium text-white/50">
-                          Before (Original)
-                        </p>
-                        <div className="overflow-hidden rounded-xl bg-black/40 border border-white/10">
-                          <img
-                            src={originalPreviewUrl}
-                            alt="Original"
-                            className="max-h-[520px] w-full object-contain"
-                          />
+                    <div className="space-y-3">
+                      {canComparePrevious && (
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] text-white/50">
+                            Comparing against:
+                          </span>
+                          <div className="inline-flex rounded-lg border border-white/10 bg-black/40 p-0.5 text-[11px]">
+                            <button
+                              type="button"
+                              onClick={() => setCompareTarget("original")}
+                              className={cn(
+                                "rounded-md px-2.5 py-1 transition cursor-pointer",
+                                compareTarget === "original"
+                                  ? "bg-indigo-600 text-white"
+                                  : "text-white/60 hover:text-white",
+                              )}
+                            >
+                              Original Photo
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setCompareTarget("previous")}
+                              className={cn(
+                                "rounded-md px-2.5 py-1 transition cursor-pointer",
+                                compareTarget === "previous"
+                                  ? "bg-emerald-600 text-white"
+                                  : "text-white/60 hover:text-white",
+                              )}
+                            >
+                              Previous Step
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                      <div>
-                        <p className="mb-2 text-xs font-medium text-indigo-400">
-                          After ({engine === "local" ? "Local MLX AI" : "Cloud AI"})
-                        </p>
-                        <div
-                          className={cn(
-                            "relative overflow-hidden rounded-xl border border-indigo-500/25",
-                            hasTransparentCutout
-                              ? "bg-[repeating-conic-gradient(#1f2937_0%_25%,#111827_0%_50%)] bg-[length:20px_20px]"
-                              : "bg-black/40",
-                          )}
-                        >
-                          <img
-                            src={activeResultUrl}
-                            alt="Edited"
-                            className="max-h-[520px] w-full object-contain"
-                            style={{ filter: cssFilter }}
-                          />
-                          <div style={vignetteStyle} />
+                      )}
+                      <div className="grid gap-5 md:grid-cols-2">
+                        <div>
+                          <p className="mb-2 text-xs font-medium text-white/50">
+                            Before ({effectiveBeforeLabel})
+                          </p>
+                          <div className="overflow-hidden rounded-xl bg-black/40 border border-white/10">
+                            <img
+                              src={effectiveBeforeUrl || originalPreviewUrl}
+                              alt={effectiveBeforeLabel}
+                              className="max-h-[520px] w-full object-contain"
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <p className="mb-2 text-xs font-medium text-indigo-400">
+                            After ({engine === "local" ? "Local MLX AI" : "Cloud AI"})
+                          </p>
+                          <div
+                            className={cn(
+                              "relative overflow-hidden rounded-xl border border-indigo-500/25",
+                              hasTransparentCutout
+                                ? "bg-[repeating-conic-gradient(#1f2937_0%_25%,#111827_0%_50%)] bg-[length:20px_20px]"
+                                : "bg-black/40",
+                            )}
+                          >
+                            <img
+                              src={activeResultUrl}
+                              alt="Edited"
+                              className="max-h-[520px] w-full object-contain"
+                              style={{ filter: cssFilter }}
+                            />
+                            <div style={vignetteStyle} />
+                          </div>
                         </div>
                       </div>
                     </div>
                   ) : (
                     /* Interactive Split Slider */
                     <div className="flex flex-col items-center">
+                      {canComparePrevious && (
+                        <div className="mb-3 inline-flex items-center gap-1 rounded-lg border border-white/10 bg-black/40 p-0.5 text-[11px]">
+                          <button
+                            type="button"
+                            onClick={() => setCompareTarget("original")}
+                            className={cn(
+                              "rounded-md px-2.5 py-1 transition cursor-pointer",
+                              compareTarget === "original"
+                                ? "bg-indigo-600 text-white"
+                                : "text-white/60 hover:text-white",
+                            )}
+                          >
+                            vs. Original
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setCompareTarget("previous")}
+                            className={cn(
+                              "rounded-md px-2.5 py-1 transition cursor-pointer",
+                              compareTarget === "previous"
+                                ? "bg-emerald-600 text-white"
+                                : "text-white/60 hover:text-white",
+                            )}
+                          >
+                            vs. Previous Step
+                          </button>
+                        </div>
+                      )}
                       <BeforeAfterSlider
-                        beforeImageUrl={originalPreviewUrl}
+                        beforeImageUrl={effectiveBeforeUrl || originalPreviewUrl}
                         afterImageUrl={activeResultUrl}
-                        beforeAlt="Original photo"
+                        beforeAlt={effectiveBeforeLabel}
                         afterAlt="AI edited photo"
+                        beforeLabel={effectiveBeforeLabel}
                         className={cn("max-w-xl", aspectClass)}
                         afterStyle={{ filter: cssFilter }}
                         afterOverlay={<div style={vignetteStyle} />}
@@ -685,7 +943,7 @@ export function PhotoStudio({
                   </div>
                 </div>
               ) : (
-                <form onSubmit={handleLocalSubmit} className="space-y-4">
+                <form onSubmit={handleLocalSubmit} className="space-y-3.5">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
                       <Cpu className="h-4 w-4 text-emerald-400" />
@@ -698,7 +956,7 @@ export function PhotoStudio({
                     </div>
 
                     {/* Model Selector */}
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex flex-wrap items-center gap-1.5">
                       <button
                         type="button"
                         onClick={() => onLocalModelChange("flux2-klein-4b")}
@@ -726,14 +984,182 @@ export function PhotoStudio({
                     </div>
                   </div>
 
-                  {/* Main Prompt Input */}
-                  <div className="flex flex-col sm:flex-row gap-2.5">
+                  {/* Photoshop-Level Tools Strip: Brush Mask + Multi-Photo Reference + Local Upscale/Cutout */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={isLocalGenerating || !maskSourceImageUrl}
+                      onClick={() => setBrushMaskOpen(true)}
+                      className={cn(
+                        "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-medium transition cursor-pointer border",
+                        localMaskDataUrl
+                          ? "border-purple-500 bg-purple-600/25 text-purple-200"
+                          : "border-white/10 bg-white/[0.04] text-white/75 hover:bg-white/10 hover:text-white",
+                      )}
+                      title="Paint directly on your photo to lock your face and repaint only the painted pixels (Qwen 2.1)"
+                    >
+                      <Brush className="h-3.5 w-3.5 text-purple-400" />
+                      {localMaskDataUrl ? "Edit Brush Mask" : "Paint Mask"}
+                    </button>
+
+                    <input
+                      ref={refFileInputRef}
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      className="hidden"
+                      onChange={(e) => {
+                        if (e.target.files && e.target.files.length > 0) {
+                          void onAddReferenceFiles(e.target.files);
+                          e.target.value = "";
+                        }
+                      }}
+                    />
+                    <button
+                      type="button"
+                      disabled={isLocalGenerating || localReferenceImages.length >= 3}
+                      onClick={() => refFileInputRef.current?.click()}
+                      className={cn(
+                        "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-medium transition cursor-pointer border",
+                        localReferenceImages.length > 0
+                          ? "border-cyan-500/50 bg-cyan-500/15 text-cyan-200"
+                          : "border-white/10 bg-white/[0.04] text-white/75 hover:bg-white/10 hover:text-white",
+                      )}
+                      title="Add up to 3 extra reference photos (e.g. a jacket, car, background, or friend) and reference them as 'image 2', 'image 3'"
+                    >
+                      <ImagePlus className="h-3.5 w-3.5 text-cyan-400" />
+                      {localReferenceImages.length > 0
+                        ? `Ref Photos (${localReferenceImages.length}/3)`
+                        : "+ Ref Photo"}
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={isLocalGenerating}
+                      onClick={() => onRunLocalUpscale("2x")}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-1.5 text-[11px] font-medium text-white/75 hover:bg-white/10 hover:text-white transition cursor-pointer disabled:opacity-40"
+                      title="Super-resolution 2× upscale locally on Apple Silicon using SeedVR2 ($0)"
+                    >
+                      <ZoomIn className="h-3.5 w-3.5 text-amber-400" />
+                      2× AI Upscale
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={isLocalGenerating}
+                      onClick={onRunLocalCutout}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-1.5 text-[11px] font-medium text-white/75 hover:bg-white/10 hover:text-white transition cursor-pointer disabled:opacity-40"
+                      title="Create a crisp transparent PNG cutout locally using FIBO RMBG ($0, zero Cloudinary credits)"
+                    >
+                      <Scissors className="h-3.5 w-3.5 text-pink-400" />
+                      PNG Cutout
+                    </button>
+                  </div>
+
+                  {/* Active Brush Mask Badge */}
+                  {localMaskDataUrl && (
+                    <div className="flex items-center justify-between gap-3 rounded-xl border border-purple-500/35 bg-purple-500/10 px-3 py-2">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        {localMaskPreviewUrl && (
+                          <img
+                            src={localMaskPreviewUrl}
+                            alt="Active brush mask"
+                            className="h-10 w-10 rounded-lg border border-purple-400/40 object-cover shrink-0 bg-black"
+                          />
+                        )}
+                        <div className="min-w-0">
+                          <p className="text-xs font-semibold text-purple-200">
+                            Brush Mask Active (Qwen 2.1 Pixel-Lock)
+                          </p>
+                          <p className="text-[11px] text-purple-200/70 truncate">
+                            Only painted purple pixels will change; everything else stays locked.
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => setBrushMaskOpen(true)}
+                          className="rounded-lg bg-purple-600/40 hover:bg-purple-600/60 px-2.5 py-1 text-[11px] font-medium text-white cursor-pointer"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={onClearBrushMask}
+                          className="rounded-lg bg-white/10 hover:bg-red-500/30 px-2.5 py-1 text-[11px] font-medium text-white/80 cursor-pointer"
+                        >
+                          Clear
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Active Multi-Photo Reference Strip */}
+                  {localReferenceImages.length > 0 && (
+                    <div className="rounded-xl border border-cyan-500/30 bg-cyan-500/[0.07] p-2.5 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-medium text-cyan-200">
+                          Multi-Photo Compositing — refer to them as{" "}
+                          <code className="text-white">image 2</code>
+                          {localReferenceImages.length > 1 ? ", image 3" : ""} in your prompt
+                        </span>
+                        <button
+                          type="button"
+                          onClick={onClearReferenceImages}
+                          className="text-[10px] text-white/50 hover:text-red-300 cursor-pointer"
+                        >
+                          Clear all
+                        </button>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <div className="inline-flex items-center gap-1.5 rounded-lg border border-white/15 bg-black/40 px-2 py-1 text-[10px] text-white/75">
+                          <span className="font-semibold text-emerald-300">Image 1</span>
+                          <span>Main Canvas</span>
+                        </div>
+                        {localReferenceImages.map((ref, idx) => (
+                          <div
+                            key={ref.id}
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-cyan-500/30 bg-black/50 pr-1.5 pl-1 py-1 text-[10px] text-white"
+                          >
+                            <img
+                              src={ref.dataUrl}
+                              alt={ref.name}
+                              className="h-6 w-6 rounded object-cover"
+                            />
+                            <span className="font-semibold text-cyan-300">
+                              Image {idx + 2}
+                            </span>
+                            <span className="max-w-[90px] truncate text-white/70">
+                              {ref.name}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => onRemoveReferenceImage(ref.id)}
+                              className="rounded p-0.5 text-white/50 hover:bg-red-500/20 hover:text-red-300 cursor-pointer"
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Main Prompt Input + Generate + Retry New Seed */}
+                  <div className="flex flex-col sm:flex-row gap-2">
                     <div className="relative flex-1">
                       <input
                         type="text"
                         value={localPrompt}
                         onChange={(e) => setLocalPrompt(e.target.value)}
-                        placeholder="Describe any edit... e.g. 'Change my jacket to black leather, put me in Paris at golden hour, keep my exact face'"
+                        placeholder={
+                          localReferenceImages.length > 0
+                            ? "e.g. 'Put me wearing the jacket from image 2 in a warm sunlit coffee shop'"
+                            : localResultUrl && chainLocalEdits
+                              ? "Describe a follow-up edit... e.g. 'Change the lightsaber to purple' or 'Place me on Tatooine'"
+                              : "Describe any edit... e.g. 'Change my jacket to black leather, put me in Paris at golden hour'"
+                        }
                         className="w-full rounded-xl border border-white/15 bg-black/50 px-4 py-3 text-sm text-white placeholder-white/40 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 pr-9"
                       />
                       {localPrompt && (
@@ -747,23 +1173,37 @@ export function PhotoStudio({
                       )}
                     </div>
 
-                    <button
-                      type="submit"
-                      disabled={!localPrompt.trim() || isLocalGenerating}
-                      className={cn(
-                        "inline-flex items-center justify-center gap-2 rounded-xl px-6 py-3 text-sm font-semibold text-white transition cursor-pointer shrink-0 shadow-lg",
-                        localPrompt.trim() && !isLocalGenerating
-                          ? "bg-emerald-600 hover:bg-emerald-500 shadow-emerald-600/25"
-                          : "bg-white/10 text-white/40 cursor-not-allowed",
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="submit"
+                        disabled={!localPrompt.trim() || isLocalGenerating}
+                        className={cn(
+                          "inline-flex flex-1 sm:flex-initial items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold text-white transition cursor-pointer shadow-lg",
+                          localPrompt.trim() && !isLocalGenerating
+                            ? "bg-emerald-600 hover:bg-emerald-500 shadow-emerald-600/25"
+                            : "bg-white/10 text-white/40 cursor-not-allowed",
+                        )}
+                      >
+                        <Sparkles className="h-4 w-4" />
+                        Generate Edit
+                      </button>
+
+                      {localResultUrl && localLastPrompt && !isLocalGenerating && (
+                        <button
+                          type="button"
+                          onClick={onRegenerateLocalEdit}
+                          title={`Re-run "${localLastPrompt}" on the same source image with a fresh random seed`}
+                          className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-white/15 bg-white/5 px-3.5 py-3 text-xs font-semibold text-white/85 hover:bg-white/10 hover:text-white transition cursor-pointer"
+                        >
+                          <Dices className="h-4 w-4 text-indigo-400" />
+                          <span className="hidden md:inline">Retry Seed</span>
+                        </button>
                       )}
-                    >
-                      <Sparkles className="h-4 w-4" />
-                      Generate Edit
-                    </button>
+                    </div>
                   </div>
 
-                  {/* Precision Controls Row */}
-                  <div className="flex flex-wrap items-center gap-3 text-[11px] text-white/70 pt-0.5">
+                  {/* Primary Controls Row */}
+                  <div className="flex flex-wrap items-center gap-x-3.5 gap-y-2 text-[11px] text-white/75 pt-0.5">
                     {/* Resolution */}
                     <div className="flex items-center gap-1">
                       <span className="text-white/45">Size:</span>
@@ -795,7 +1235,7 @@ export function PhotoStudio({
                           }
                           className="accent-emerald-500 rounded"
                         />
-                        <span>Continue editing from latest result</span>
+                        <span>Continue from latest</span>
                       </label>
                     )}
 
@@ -826,21 +1266,271 @@ export function PhotoStudio({
                         </label>
                       </>
                     )}
+
+                    {/* Sound / Desktop Alert Bell */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next = !soundAlertsEnabled;
+                        onSoundAlertsEnabledChange(next);
+                        if (next) void onRequestDesktopNotifications();
+                      }}
+                      className={cn(
+                        "ml-auto inline-flex items-center gap-1 rounded-md px-2 py-0.5 border transition cursor-pointer",
+                        soundAlertsEnabled
+                          ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+                          : "border-white/10 bg-white/5 text-white/45",
+                      )}
+                      title="Play chime & notify when GPU render completes"
+                    >
+                      {soundAlertsEnabled ? (
+                        <Bell className="h-3 w-3" />
+                      ) : (
+                        <BellOff className="h-3 w-3" />
+                      )}
+                      <span>{soundAlertsEnabled ? "Alerts" : "Muted"}</span>
+                    </button>
                   </div>
 
-                  {/* Qwen Auto-Mask Input for Surgical Face Lock */}
-                  {localModel === "qwen-2.1-turbo" && (
-                    <div className="flex flex-col sm:flex-row sm:items-center gap-2 rounded-xl bg-indigo-500/10 border border-indigo-500/20 px-3.5 py-2.5">
-                      <span className="text-[11px] font-medium text-indigo-300 shrink-0">
-                        🎯 Auto-Mask Target (optional):
-                      </span>
-                      <input
-                        type="text"
-                        value={localAutoMask}
-                        onChange={(e) => onLocalAutoMaskChange(e.target.value)}
-                        placeholder="e.g. 'the shirt' or 'the background' — repaints ONLY this object, locks everything else"
-                        className="flex-1 bg-transparent text-xs text-white placeholder-white/40 focus:outline-none"
-                      />
+                  {/* Style Directives Row */}
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-[10px] text-white/45 mr-0.5">
+                      Style:
+                    </span>
+                    {LOCAL_STYLE_OPTIONS.map((opt) => (
+                      <button
+                        key={opt.id || "default"}
+                        type="button"
+                        onClick={() => onLocalStyleModeChange(opt.id)}
+                        className={cn(
+                          "rounded-full px-2.5 py-0.5 text-[10px] font-medium transition cursor-pointer border",
+                          localStyleMode === opt.id
+                            ? "border-indigo-500 bg-indigo-600/30 text-indigo-100"
+                            : "border-white/10 bg-white/[0.03] text-white/55 hover:text-white hover:bg-white/10",
+                        )}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+
+                    <button
+                      type="button"
+                      onClick={() => setShowProControls((v) => !v)}
+                      className={cn(
+                        "ml-auto inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-medium transition cursor-pointer border",
+                        showProControls || activeProCount > 0
+                          ? "border-indigo-500/40 bg-indigo-500/15 text-indigo-200"
+                          : "border-white/10 bg-white/[0.03] text-white/60 hover:text-white",
+                      )}
+                    >
+                      <SlidersHorizontal className="h-3 w-3" />
+                      Pro Controls
+                      {activeProCount > 0 && (
+                        <span className="rounded-full bg-indigo-500/40 px-1.5 text-[9px] text-white">
+                          {activeProCount}
+                        </span>
+                      )}
+                      {showProControls ? (
+                        <ChevronUp className="h-3 w-3" />
+                      ) : (
+                        <ChevronDown className="h-3 w-3" />
+                      )}
+                    </button>
+                  </div>
+
+                  {/* Collapsible Pro Controls: Strength, Seed Lock, Negative Prompt, Auto-Mask, Custom LoRA */}
+                  {showProControls && (
+                    <div className="rounded-xl border border-white/10 bg-black/35 p-3.5 space-y-3.5">
+                      {/* Edit Strength Slider (Qwen 2.1) */}
+                      {localModel === "qwen-2.1-turbo" && (
+                        <div className="space-y-1.5">
+                          <div className="flex items-center justify-between text-[11px]">
+                            <span className="font-medium text-white/80">
+                              Edit Strength (Subtle Touch-up ↔ Full Reimagine)
+                            </span>
+                            <div className="flex items-center gap-1.5">
+                              {[
+                                { label: "Subtle", val: 0.55 },
+                                { label: "Balanced", val: 0.8 },
+                                { label: "Full", val: 1.0 },
+                              ].map((p) => (
+                                <button
+                                  key={p.label}
+                                  type="button"
+                                  onClick={() => onLocalStrengthChange(p.val)}
+                                  className={cn(
+                                    "rounded px-1.5 py-0.5 text-[10px] border cursor-pointer",
+                                    Math.abs(localStrength - p.val) < 0.03
+                                      ? "border-emerald-500 bg-emerald-500/20 text-emerald-200"
+                                      : "border-white/10 bg-white/5 text-white/55 hover:text-white",
+                                  )}
+                                >
+                                  {p.label}
+                                </button>
+                              ))}
+                              <span className="w-9 text-right font-mono text-emerald-300">
+                                {localStrength.toFixed(2)}
+                              </span>
+                            </div>
+                          </div>
+                          <input
+                            type="range"
+                            min={0.15}
+                            max={1.0}
+                            step={0.05}
+                            value={localStrength}
+                            onChange={(e) =>
+                              onLocalStrengthChange(Number(e.target.value))
+                            }
+                            className="w-full accent-emerald-500 cursor-pointer"
+                          />
+                        </div>
+                      )}
+
+                      {/* Seed Lock + Custom Seed */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <label className="text-[11px] font-medium text-white/75 flex items-center justify-between">
+                            <span>Seed Control</span>
+                            {localLastSeed && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const nextLock = !localSeedLocked;
+                                  onLocalSeedLockedChange(nextLock);
+                                  if (nextLock) {
+                                    onLocalSeedChange(String(localLastSeed));
+                                  }
+                                }}
+                                className={cn(
+                                  "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] cursor-pointer",
+                                  localSeedLocked
+                                    ? "bg-amber-500/20 text-amber-300 border border-amber-500/40"
+                                    : "bg-white/5 text-white/55 hover:text-white",
+                                )}
+                              >
+                                {localSeedLocked ? (
+                                  <Lock className="h-2.5 w-2.5" />
+                                ) : (
+                                  <Unlock className="h-2.5 w-2.5" />
+                                )}
+                                {localSeedLocked
+                                  ? `Locked #${localLastSeed}`
+                                  : `Lock Last #${localLastSeed}`}
+                              </button>
+                            )}
+                          </label>
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              value={localSeed}
+                              onChange={(e) => {
+                                onLocalSeedLockedChange(false);
+                                onLocalSeedChange(
+                                  e.target.value.replace(/[^\d]/g, ""),
+                                );
+                              }}
+                              placeholder="Random every run (or enter seed #)"
+                              className="flex-1 rounded-lg border border-white/10 bg-black/50 px-2.5 py-1.5 text-xs text-white placeholder-white/35 focus:border-indigo-500 focus:outline-none font-mono"
+                            />
+                            {localSeed && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  onLocalSeedLockedChange(false);
+                                  onLocalSeedChange("");
+                                }}
+                                title="Reset to random seed"
+                                className="rounded-lg border border-white/10 bg-white/5 p-1.5 text-white/60 hover:text-white cursor-pointer"
+                              >
+                                <Dices className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Custom LoRA Adapter */}
+                        <div className="space-y-1">
+                          <label className="text-[11px] font-medium text-white/75 flex items-center justify-between">
+                            <span>Custom LoRA (optional)</span>
+                            <span className="font-mono text-[10px] text-white/50">
+                              Scale: {localLoraScale.toFixed(1)}
+                            </span>
+                          </label>
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              type="text"
+                              value={localLoraPath}
+                              onChange={(e) =>
+                                onLocalLoraPathChange(e.target.value)
+                              }
+                              placeholder="Local .safetensors path or HF repo"
+                              className="flex-1 rounded-lg border border-white/10 bg-black/50 px-2.5 py-1.5 text-xs text-white placeholder-white/35 focus:border-indigo-500 focus:outline-none"
+                            />
+                            <input
+                              type="range"
+                              min={0.2}
+                              max={1.5}
+                              step={0.1}
+                              value={localLoraScale}
+                              onChange={(e) =>
+                                onLocalLoraScaleChange(Number(e.target.value))
+                              }
+                              className="w-16 accent-indigo-500 cursor-pointer"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Negative Prompt */}
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-medium text-white/75">
+                            Negative Prompt (what to avoid)
+                          </span>
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                onLocalNegativePromptChange(
+                                  QUICK_NEGATIVE_PRESETS[0],
+                                )
+                              }
+                              className="rounded border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] text-white/60 hover:text-white cursor-pointer"
+                            >
+                              + Anti-Glitch Preset
+                            </button>
+                          </div>
+                        </div>
+                        <input
+                          type="text"
+                          value={localNegativePrompt}
+                          onChange={(e) =>
+                            onLocalNegativePromptChange(e.target.value)
+                          }
+                          placeholder="e.g. 'extra fingers, distorted hands, blurry face, plastic skin, watermark'"
+                          className="w-full rounded-lg border border-white/10 bg-black/50 px-3 py-1.5 text-xs text-white placeholder-white/35 focus:border-indigo-500 focus:outline-none"
+                        />
+                      </div>
+
+                      {/* Qwen Text Auto-Mask Input (when Brush Mask is not set) */}
+                      {localModel === "qwen-2.1-turbo" && !localMaskDataUrl && (
+                        <div className="flex flex-col sm:flex-row sm:items-center gap-2 rounded-lg bg-indigo-500/10 border border-indigo-500/20 px-3 py-2">
+                          <span className="text-[11px] font-medium text-indigo-300 shrink-0">
+                            🎯 Text Auto-Mask:
+                          </span>
+                          <input
+                            type="text"
+                            value={localAutoMask}
+                            onChange={(e) =>
+                              onLocalAutoMaskChange(e.target.value)
+                            }
+                            placeholder="e.g. 'the shirt' or 'the background' — repaints ONLY this object"
+                            className="flex-1 bg-transparent text-xs text-white placeholder-white/40 focus:outline-none"
+                          />
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -1435,8 +2125,8 @@ export function PhotoStudio({
                   )}
                 </div>
               ) : (
-                /* Local AI Session Summary Card */
-                <div className="glass-card border border-emerald-500/20 bg-emerald-500/[0.04] p-4 space-y-2">
+                /* Local AI Session Summary Card + Zero-Credit Local Tools */
+                <div className="glass-card border border-emerald-500/20 bg-emerald-500/[0.04] p-4 space-y-3">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-semibold text-emerald-300 flex items-center gap-1.5">
                       <Cpu className="h-3.5 w-3.5" />
@@ -1453,6 +2143,68 @@ export function PhotoStudio({
                       ? `Last edit: "${localLastPrompt}"`
                       : "Enter any natural-language prompt below the canvas or click a 1-click preset."}
                   </p>
+
+                  {localLastSeed && (
+                    <div className="flex items-center justify-between rounded-lg bg-black/35 border border-white/10 px-2.5 py-1.5 text-[11px]">
+                      <span className="font-mono text-white/65">
+                        Seed #{localLastSeed}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const nextLock = !localSeedLocked;
+                          onLocalSeedLockedChange(nextLock);
+                          onLocalSeedChange(nextLock ? String(localLastSeed) : "");
+                        }}
+                        className={cn(
+                          "inline-flex items-center gap-1 rounded px-2 py-0.5 text-[10px] font-medium cursor-pointer",
+                          localSeedLocked
+                            ? "bg-amber-500/20 text-amber-300"
+                            : "bg-white/10 text-white/75 hover:text-white",
+                        )}
+                      >
+                        {localSeedLocked ? (
+                          <Lock className="h-3 w-3" />
+                        ) : (
+                          <Unlock className="h-3 w-3" />
+                        )}
+                        {localSeedLocked ? "Locked" : "Lock Seed"}
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Quick Local-Only Actions (Zero Cloudinary Credits) */}
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <button
+                      type="button"
+                      disabled={isLocalGenerating || !localConnected}
+                      onClick={() => onRunLocalUpscale("2x")}
+                      className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-white/10 bg-black/35 px-2.5 py-2 text-[11px] font-medium text-white/80 hover:border-amber-500/40 hover:bg-amber-500/10 transition cursor-pointer disabled:opacity-40"
+                    >
+                      <ZoomIn className="h-3.5 w-3.5 text-amber-400" />
+                      2× Upscale
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isLocalGenerating || !localConnected}
+                      onClick={onRunLocalCutout}
+                      className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-white/10 bg-black/35 px-2.5 py-2 text-[11px] font-medium text-white/80 hover:border-pink-500/40 hover:bg-pink-500/10 transition cursor-pointer disabled:opacity-40"
+                    >
+                      <Scissors className="h-3.5 w-3.5 text-pink-400" />
+                      PNG Cutout
+                    </button>
+                  </div>
+
+                  {localConnected && (
+                    <button
+                      type="button"
+                      onClick={onOpenGallery}
+                      className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg border border-emerald-500/25 bg-emerald-500/10 px-3 py-2 text-[11px] font-medium text-emerald-200 hover:bg-emerald-500/20 transition cursor-pointer"
+                    >
+                      <Images className="h-3.5 w-3.5 text-emerald-400" />
+                      Open Saved Mac Library ({galleryCount})
+                    </button>
+                  )}
                 </div>
               )}
 
@@ -1557,6 +2309,19 @@ export function PhotoStudio({
           )}
         </aside>
       </div>
+
+      {/* Interactive Brush Mask Editor Modal */}
+      {brushMaskOpen && maskSourceImageUrl && (
+        <BrushMaskEditor
+          sourceImageUrl={maskSourceImageUrl}
+          initialMaskDataUrl={localMaskDataUrl}
+          onSave={(maskData, previewData) => {
+            onSaveBrushMask(maskData, previewData);
+            setBrushMaskOpen(false);
+          }}
+          onClose={() => setBrushMaskOpen(false)}
+        />
+      )}
     </main>
   );
 }

@@ -5,7 +5,11 @@ import type {
   EditHistoryItem,
   LocalAiHealth,
   LocalEditJobStatus,
+  LocalGalleryItem,
   LocalModelId,
+  LocalOperation,
+  LocalReferenceImage,
+  LocalStyleMode,
   MicroTuningSettings,
   PhotoLayer,
   PhotoLayerInput,
@@ -26,10 +30,18 @@ import {
 import {
   cancelLocalJob,
   checkLocalAiHealth,
+  deleteLocalGalleryItem,
+  fetchLocalGallery,
+  fileToDataUrl,
+  notifyRenderComplete,
+  openLocalGalleryFolder,
   parsePromptWithLocalOllama,
+  playCompletionChime,
   pollLocalJob,
   startLocalEdit,
 } from "../lib/local-ai";
+
+const DEFAULT_PAGE_TITLE = "AI Photo Studio";
 
 export function useStudio() {
   // Base source photo state (supports BOTH Cloudinary uploads AND pure local-only files!)
@@ -41,16 +53,46 @@ export function useStudio() {
   // Engine & local AI health
   const [engine, setEngine] = useState<EditEngine>("cloud");
   const [localHealth, setLocalHealth] = useState<LocalAiHealth | null>(null);
-  const [localModel, setLocalModel] = useState<LocalModelId>("flux2-klein-4b");
+  const [localModel, setLocalModel] = useState<LocalModelId>("qwen-2.1-turbo");
   const [localResolution, setLocalResolution] = useState<number>(768);
+  const [localStrength, setLocalStrength] = useState<number>(1.0);
   const [localAutoMask, setLocalAutoMask] = useState<string>("");
-  const [localEnhancePrompt, setLocalEnhancePrompt] = useState<boolean>(false);
+  const [localMaskDataUrl, setLocalMaskDataUrl] = useState<string | null>(null);
+  const [localMaskPreviewUrl, setLocalMaskPreviewUrl] = useState<string | null>(
+    null,
+  );
+  const [localReferenceImages, setLocalReferenceImages] = useState<
+    LocalReferenceImage[]
+  >([]);
+  const [localNegativePrompt, setLocalNegativePrompt] = useState<string>("");
+  const [localStyleMode, setLocalStyleMode] = useState<LocalStyleMode>("");
+  const [localLoraPath, setLocalLoraPath] = useState<string>("");
+  const [localLoraScale, setLocalLoraScale] = useState<number>(1.0);
+  const [localSeed, setLocalSeed] = useState<string>("");
+  const [localSeedLocked, setLocalSeedLocked] = useState<boolean>(false);
+  const [localLastSeed, setLocalLastSeed] = useState<number | null>(null);
+  const [localEnhancePrompt, setLocalEnhancePrompt] = useState<boolean>(true);
   const [localVerify, setLocalVerify] = useState<boolean>(false);
+  const [soundAlertsEnabled, setSoundAlertsEnabled] = useState<boolean>(true);
+
   const [localJob, setLocalJob] = useState<LocalEditJobStatus | null>(null);
   const [localResultUrl, setLocalResultUrl] = useState<string | null>(null);
+  const [localPreviousResultUrl, setLocalPreviousResultUrl] = useState<
+    string | null
+  >(null);
+  const [localLastSourceUrl, setLocalLastSourceUrl] = useState<string | null>(
+    null,
+  );
   const [localBaseUrl, setLocalBaseUrl] = useState<string | null>(null);
   const [localLastPrompt, setLocalLastPrompt] = useState<string>("");
+  const [localLastOperation, setLocalLastOperation] =
+    useState<LocalOperation>("edit");
   const [chainLocalEdits, setChainLocalEdits] = useState<boolean>(true);
+
+  // Auto-saved persistent Local Studio Library (~/Pictures/AI-Photo-Studio)
+  const [galleryItems, setGalleryItems] = useState<LocalGalleryItem[]>([]);
+  const [galleryDir, setGalleryDir] = useState<string | undefined>(undefined);
+  const [galleryLoading, setGalleryLoading] = useState<boolean>(false);
 
   // Cloud Photoshop layer stack
   const [layers, setLayers] = useState<PhotoLayer[]>([]);
@@ -64,11 +106,32 @@ export function useStudio() {
 
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeJobIdRef = useRef<string | null>(null);
+  const soundAlertsRef = useRef<boolean>(soundAlertsEnabled);
+
+  useEffect(() => {
+    soundAlertsRef.current = soundAlertsEnabled;
+  }, [soundAlertsEnabled]);
+
+  const refreshGallery = useCallback(async () => {
+    setGalleryLoading(true);
+    try {
+      const data = await fetchLocalGallery();
+      if (data) {
+        setGalleryItems(data.items);
+        setGalleryDir(data.dir);
+      }
+    } finally {
+      setGalleryLoading(false);
+    }
+  }, []);
 
   // Check local Mac mflux server availability on mount & every 15s
   const refreshLocalHealth = useCallback(async () => {
     const health = await checkLocalAiHealth();
     setLocalHealth(health);
+    if (health?.ok) {
+      setGalleryDir(health.galleryDir);
+    }
     return health;
   }, []);
 
@@ -77,9 +140,10 @@ export function useStudio() {
     checkLocalAiHealth().then((health) => {
       if (!active) return;
       setLocalHealth(health);
-      // Automatically prefer Unlimited Local AI when the user's Mac server is running!
       if (health?.ok && health.mfluxInstalled) {
         setEngine("local");
+        setGalleryDir(health.galleryDir);
+        void refreshGallery();
       }
     });
 
@@ -93,15 +157,45 @@ export function useStudio() {
       active = false;
       clearInterval(interval);
     };
-  }, []);
+  }, [refreshGallery]);
 
   useEffect(() => {
     return () => {
       if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
+      document.title = DEFAULT_PAGE_TITLE;
     };
   }, []);
 
+  // Live Chrome Tab Title progress & ETA while rendering locally
+  useEffect(() => {
+    if (
+      localJob &&
+      (localJob.status === "queued" || localJob.status === "running")
+    ) {
+      const pct =
+        typeof localJob.progress === "number" ? `${localJob.progress}%` : "...";
+      const etaPart = localJob.eta ? ` · ~${localJob.eta}` : "";
+      const prefix =
+        localJob.phase === "download" ? `DL ${pct}` : `${pct}${etaPart}`;
+      document.title = `(${prefix}) ${DEFAULT_PAGE_TITLE}`;
+    } else {
+      document.title = DEFAULT_PAGE_TITLE;
+    }
+  }, [localJob]);
+
   const hasPhoto = Boolean(publicId || originalUrl);
+
+  const resetLocalEditState = () => {
+    setLocalResultUrl(null);
+    setLocalPreviousResultUrl(null);
+    setLocalLastSourceUrl(null);
+    setLocalJob(null);
+    setLocalMaskDataUrl(null);
+    setLocalMaskPreviewUrl(null);
+    setLocalReferenceImages([]);
+    setLocalLastSeed(null);
+    setLocalLastOperation("edit");
+  };
 
   const handleUploadStart = () => {
     setUploadStatus("uploading");
@@ -117,8 +211,7 @@ export function useStudio() {
     setPublicId(result.public_id);
     setOriginalUrl(result.secure_url);
     setLocalBaseUrl(result.secure_url);
-    setLocalResultUrl(null);
-    setLocalJob(null);
+    resetLocalEditState();
     setLayers([]);
     setAspectRatio("original");
     setActiveFilter("none");
@@ -133,8 +226,7 @@ export function useStudio() {
     setPublicId(null);
     setOriginalUrl(dataUrl);
     setLocalBaseUrl(dataUrl);
-    setLocalResultUrl(null);
-    setLocalJob(null);
+    resetLocalEditState();
     setLayers([]);
     setAspectRatio("original");
     setActiveFilter("none");
@@ -150,12 +242,11 @@ export function useStudio() {
     setUploadError(error.message);
   };
 
-  const loadSamplePhoto = (sample: SamplePhoto, initialPreset?: StudioPreset) => {
+  const loadSamplePhoto = (sample: SamplePhoto, preset?: StudioPreset) => {
     setPublicId(sample.publicId);
     setOriginalUrl(sample.secureUrl);
     setLocalBaseUrl(sample.secureUrl);
-    setLocalResultUrl(null);
-    setLocalJob(null);
+    resetLocalEditState();
     setAspectRatio("original");
     setActiveFilter("none");
     setMicroTuning(DEFAULT_MICRO_TUNING);
@@ -163,14 +254,25 @@ export function useStudio() {
     setUploadStatus("success");
     setUploadError(null);
 
-    if (initialPreset) {
-      const presetLayers = initialPreset.cloudLayers.map((l, idx) => ({
-        ...l,
-        id: `preset-${Date.now()}-${idx}`,
-        enabled: true,
-      })) as PhotoLayer[];
-      setLayers(presetLayers);
-      setEngine("cloud");
+    if (preset) {
+      if (engine === "local" && localHealth?.ok && localHealth.mfluxInstalled) {
+        setLayers([]);
+        setTimeout(() => {
+          void runLocalAiPrompt(preset.localPrompt, {
+            overrideAutoMask: preset.localAutoMask ?? "",
+            overrideSourceUrl: sample.secureUrl,
+          });
+        }, 50);
+      } else {
+        setEngine("cloud");
+        setLayers(
+          preset.cloudLayers.map((l, idx) => ({
+            ...l,
+            id: `preset-${Date.now()}-${idx}`,
+            enabled: true,
+          })) as PhotoLayer[],
+        );
+      }
     } else {
       setLayers([]);
     }
@@ -178,23 +280,72 @@ export function useStudio() {
 
   const resetStudio = () => {
     if (activeJobIdRef.current) {
-      cancelLocalJob(activeJobIdRef.current);
+      void cancelLocalJob(activeJobIdRef.current);
       activeJobIdRef.current = null;
     }
     if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
     setPublicId(null);
     setOriginalUrl(null);
     setLocalBaseUrl(null);
-    setLocalResultUrl(null);
-    setLocalJob(null);
-    setLocalLastPrompt("");
+    resetLocalEditState();
     setLayers([]);
+    setHistory([]);
     setAspectRatio("original");
     setActiveFilter("none");
     setMicroTuning(DEFAULT_MICRO_TUNING);
-    setHistory([]);
     setUploadStatus("idle");
     setUploadError(null);
+  };
+
+  // --- BRUSH MASK & MULTI-IMAGE REFERENCE ACTIONS ---
+  const saveLocalBrushMask = (maskDataUrl: string, previewDataUrl: string) => {
+    setLocalMaskDataUrl(maskDataUrl);
+    setLocalMaskPreviewUrl(previewDataUrl);
+    // Brush masking is supported by Qwen 2.1 Turbo — auto-select it so it works immediately
+    setLocalModel("qwen-2.1-turbo");
+  };
+
+  const clearLocalBrushMask = () => {
+    setLocalMaskDataUrl(null);
+    setLocalMaskPreviewUrl(null);
+  };
+
+  const addLocalReferenceFiles = async (files: FileList | File[]) => {
+    const arr = Array.from(files).slice(0, 3);
+    const additions: LocalReferenceImage[] = [];
+    for (const file of arr) {
+      if (!file.type.startsWith("image/")) continue;
+      const dataUrl = await fileToDataUrl(file);
+      additions.push({
+        id: `ref-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        name: file.name,
+        dataUrl,
+      });
+    }
+    if (additions.length > 0) {
+      setLocalReferenceImages((prev) => [...prev, ...additions].slice(0, 3));
+    }
+  };
+
+  const addLocalReferenceFromUrl = (name: string, url: string) => {
+    setLocalReferenceImages((prev) =>
+      [
+        ...prev,
+        {
+          id: `ref-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          name,
+          dataUrl: url,
+        },
+      ].slice(0, 3),
+    );
+  };
+
+  const removeLocalReferenceImage = (id: string) => {
+    setLocalReferenceImages((prev) => prev.filter((r) => r.id !== id));
+  };
+
+  const clearLocalReferenceImages = () => {
+    setLocalReferenceImages([]);
   };
 
   // --- CLOUD LAYER STACK ACTIONS ---
@@ -206,7 +357,6 @@ export function useStudio() {
     } as PhotoLayer;
 
     setLayers((prev) => {
-      // Auto-deactivate conflicting layers
       let next = prev;
       if (full.type === "background_replace" || full.type === "cutout") {
         next = next.map((l) =>
@@ -242,7 +392,6 @@ export function useStudio() {
     if (!prompt.trim()) return;
     setEngine("cloud");
 
-    // Try local Ollama smart parser first if connected, otherwise instant built-in parser
     let parsed: PhotoLayer[] = [];
     if (localHealth?.ollama?.connected) {
       const ollamaLayers = await parsePromptWithLocalOllama(prompt);
@@ -254,7 +403,6 @@ export function useStudio() {
       parsed = parsePromptToLayers(prompt);
     }
 
-    // Filter out invalid generic placeholder layers
     const cleanParsed = parsed.filter((l) => {
       if (l.type === "replace") {
         const fromLower = l.from.toLowerCase().trim();
@@ -297,19 +445,14 @@ export function useStudio() {
   };
 
   // --- LOCAL MAC AI (mflux) ACTIONS ---
-  const runLocalAiPrompt = async (
-    prompt: string,
-    overrideAutoMask?: string,
-  ) => {
-    const cleanPrompt = prompt.trim();
-    if (!cleanPrompt) return;
-
-    const sourceImage =
-      chainLocalEdits && localResultUrl
-        ? localResultUrl
-        : localBaseUrl || originalUrl;
-    if (!sourceImage) return;
-
+  const executeLocalJob = async (opts: {
+    operation: LocalOperation;
+    prompt: string;
+    sourceImage: string;
+    overrideAutoMask?: string;
+    forceNewSeed?: boolean;
+    upscaleFactor?: string;
+  }) => {
     // Cancel any prior job
     if (activeJobIdRef.current) {
       await cancelLocalJob(activeJobIdRef.current);
@@ -318,32 +461,92 @@ export function useStudio() {
     if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
 
     setEngine("local");
-    setLocalLastPrompt(cleanPrompt);
+    setLocalLastSourceUrl(opts.sourceImage);
+    setLocalLastOperation(opts.operation);
+    if (opts.operation === "edit") {
+      setLocalLastPrompt(opts.prompt);
+    }
+
     setLocalJob({
       jobId: "starting",
       status: "queued",
+      phase: "queued",
+      progress: 0,
       stage: "Connecting to your Mac's Apple Silicon GPU...",
       elapsed: 0,
       logs: [],
     });
 
     try {
-      const isDataUrl = sourceImage.startsWith("data:");
+      const isDataUrl = opts.sourceImage.startsWith("data:");
       const effectiveAutoMask =
-        overrideAutoMask !== undefined ? overrideAutoMask : localAutoMask;
+        opts.overrideAutoMask !== undefined
+          ? opts.overrideAutoMask
+          : localAutoMask;
+
+      let seedToSend: number | undefined;
+      if (!opts.forceNewSeed) {
+        if (localSeedLocked && localLastSeed) {
+          seedToSend = localLastSeed;
+        } else if (localSeed.trim() && /^\d+$/.test(localSeed.trim())) {
+          seedToSend = Number(localSeed.trim());
+        }
+      }
 
       const { jobId } = await startLocalEdit({
-        imageDataUrl: isDataUrl ? sourceImage : undefined,
-        imageUrl: !isDataUrl ? sourceImage : undefined,
-        prompt: cleanPrompt,
+        operation: opts.operation,
+        imageDataUrl: isDataUrl ? opts.sourceImage : undefined,
+        imageUrl: !isDataUrl ? opts.sourceImage : undefined,
+        referenceImages:
+          opts.operation === "edit" && localReferenceImages.length > 0
+            ? localReferenceImages.map((r) => r.dataUrl)
+            : undefined,
+        maskDataUrl:
+          opts.operation === "edit" &&
+          localModel === "qwen-2.1-turbo" &&
+          localMaskDataUrl
+            ? localMaskDataUrl
+            : undefined,
+        prompt: opts.prompt,
+        negativePrompt:
+          opts.operation === "edit" && localNegativePrompt.trim()
+            ? localNegativePrompt.trim()
+            : undefined,
         model: localModel,
         autoMask:
-          localModel === "qwen-2.1-turbo" && effectiveAutoMask.trim()
+          opts.operation === "edit" &&
+          localModel === "qwen-2.1-turbo" &&
+          !localMaskDataUrl &&
+          effectiveAutoMask.trim()
             ? effectiveAutoMask.trim()
             : undefined,
+        strength:
+          opts.operation === "edit" && localModel === "qwen-2.1-turbo"
+            ? localStrength
+            : undefined,
         resolution: localResolution,
-        enhancePrompt: localModel === "qwen-2.1-turbo" && localEnhancePrompt,
-        verify: localModel === "qwen-2.1-turbo" && localVerify,
+        seed: seedToSend,
+        styleMode:
+          opts.operation === "edit" && localStyleMode
+            ? localStyleMode
+            : undefined,
+        loraPath:
+          opts.operation === "edit" && localLoraPath.trim()
+            ? localLoraPath.trim()
+            : undefined,
+        loraScale:
+          opts.operation === "edit" && localLoraPath.trim()
+            ? localLoraScale
+            : undefined,
+        enhancePrompt:
+          opts.operation === "edit" &&
+          localModel === "qwen-2.1-turbo" &&
+          localEnhancePrompt,
+        verify:
+          opts.operation === "edit" &&
+          localModel === "qwen-2.1-turbo" &&
+          localVerify,
+        upscaleFactor: opts.upscaleFactor,
       });
 
       activeJobIdRef.current = jobId;
@@ -357,16 +560,48 @@ export function useStudio() {
 
           if (status.status === "done" && status.imageDataUrl) {
             activeJobIdRef.current = null;
+            setLocalPreviousResultUrl(opts.sourceImage);
             setLocalResultUrl(status.imageDataUrl);
+            if (typeof status.seed === "number") {
+              setLocalLastSeed(status.seed);
+            }
+            if (opts.operation === "edit" && localMaskDataUrl) {
+              // Clear one-shot brush mask so follow-ups don't accidentally reuse an old silhouette
+              setLocalMaskDataUrl(null);
+              setLocalMaskPreviewUrl(null);
+            }
+
+            const historyLabel =
+              opts.operation === "upscale"
+                ? `Upscale ${opts.upscaleFactor || "2x"}`
+                : opts.operation === "cutout"
+                  ? "Local PNG Cutout"
+                  : opts.prompt.slice(0, 38);
+
             addToHistory({
-              label: cleanPrompt.slice(0, 38),
+              label: historyLabel,
               engine: "local",
               url: status.imageDataUrl,
               aspectRatio,
               filter: activeFilter,
-              prompt: cleanPrompt,
+              prompt: opts.prompt,
               localModel,
+              seed: typeof status.seed === "number" ? status.seed : undefined,
             });
+
+            if (status.galleryItem) {
+              setGalleryItems((prev) => [
+                status.galleryItem!,
+                ...prev.filter((g) => g.id !== status.galleryItem!.id),
+              ]);
+            } else {
+              void refreshGallery();
+            }
+
+            if (soundAlertsRef.current) {
+              playCompletionChime();
+              notifyRenderComplete(historyLabel);
+            }
             return;
           }
 
@@ -381,6 +616,7 @@ export function useStudio() {
           setLocalJob({
             jobId,
             status: "error",
+            phase: "error",
             stage: "Connection lost",
             elapsed: 0,
             logs: [],
@@ -397,6 +633,7 @@ export function useStudio() {
       setLocalJob({
         jobId: "failed",
         status: "error",
+        phase: "error",
         stage: "Could not start local edit",
         elapsed: 0,
         logs: [],
@@ -406,6 +643,71 @@ export function useStudio() {
             : "Local AI server is not running. Start it with: npm run local-ai",
       });
     }
+  };
+
+  const runLocalAiPrompt = async (
+    prompt: string,
+    options?: {
+      overrideAutoMask?: string;
+      overrideSourceUrl?: string;
+      forceNewSeed?: boolean;
+    },
+  ) => {
+    const cleanPrompt = prompt.trim();
+    if (!cleanPrompt) return;
+
+    const sourceImage =
+      options?.overrideSourceUrl ||
+      (chainLocalEdits && localResultUrl
+        ? localResultUrl
+        : localBaseUrl || originalUrl);
+    if (!sourceImage) return;
+
+    await executeLocalJob({
+      operation: "edit",
+      prompt: cleanPrompt,
+      sourceImage,
+      overrideAutoMask: options?.overrideAutoMask,
+      forceNewSeed: options?.forceNewSeed,
+    });
+  };
+
+  /** Retry the last prompt against the exact same source image using a brand new random seed */
+  const regenerateLocalEdit = async () => {
+    if (!localLastPrompt.trim()) return;
+    const retrySource = localLastSourceUrl || localBaseUrl || originalUrl;
+    if (!retrySource) return;
+    setLocalSeedLocked(false);
+    setLocalSeed("");
+    await executeLocalJob({
+      operation: "edit",
+      prompt: localLastPrompt,
+      sourceImage: retrySource,
+      forceNewSeed: true,
+    });
+  };
+
+  const runLocalUpscale = async (scale = "2x") => {
+    const sourceImage = localResultUrl || localBaseUrl || originalUrl;
+    if (!sourceImage) return;
+    await executeLocalJob({
+      operation: "upscale",
+      prompt: `Local AI Super-Upscale (${scale})`,
+      sourceImage,
+      upscaleFactor: scale,
+      forceNewSeed: true,
+    });
+  };
+
+  const runLocalCutout = async () => {
+    const sourceImage = localResultUrl || localBaseUrl || originalUrl;
+    if (!sourceImage) return;
+    await executeLocalJob({
+      operation: "cutout",
+      prompt: "Local AI Transparent PNG Cutout",
+      sourceImage,
+      forceNewSeed: true,
+    });
   };
 
   const cancelActiveLocalJob = async () => {
@@ -418,16 +720,69 @@ export function useStudio() {
     setLocalJob(null);
   };
 
+  // --- LOCAL GALLERY ACTIONS ---
+  const loadGalleryItemIntoStudio = (item: LocalGalleryItem) => {
+    setPublicId(null);
+    setOriginalUrl(item.imageUrl);
+    setLocalBaseUrl(item.imageUrl);
+    setLocalResultUrl(item.imageUrl);
+    setLocalPreviousResultUrl(null);
+    setLocalLastSourceUrl(item.imageUrl);
+    setLocalLastPrompt(item.prompt || "");
+    setLocalLastOperation(item.operation || "edit");
+    if (
+      item.model === "flux2-klein-4b" ||
+      item.model === "qwen-2.1-turbo"
+    ) {
+      setLocalModel(item.model);
+    }
+    if (typeof item.seed === "number") {
+      setLocalLastSeed(item.seed);
+    }
+    if (item.negativePrompt) {
+      setLocalNegativePrompt(item.negativePrompt);
+    }
+    setLocalMaskDataUrl(null);
+    setLocalMaskPreviewUrl(null);
+    setLayers([]);
+    setEngine("local");
+    setUploadStatus("success");
+    setUploadError(null);
+  };
+
+  const deleteGalleryEntry = async (itemId: string) => {
+    const ok = await deleteLocalGalleryItem(itemId);
+    if (ok) {
+      setGalleryItems((prev) => prev.filter((item) => item.id !== itemId));
+    }
+  };
+
+  const openGalleryInFinder = async () => {
+    await openLocalGalleryFolder();
+  };
+
+  const requestDesktopNotifications = async () => {
+    if (typeof Notification === "undefined") return;
+    if (Notification.permission === "default") {
+      try {
+        await Notification.requestPermission();
+      } catch {
+        // Ignore
+      }
+    }
+  };
+
   const applyPreset = (preset: StudioPreset) => {
     if (engine === "local" && localHealth?.ok && localHealth.mfluxInstalled) {
-      runLocalAiPrompt(preset.localPrompt, preset.localAutoMask ?? "");
+      void runLocalAiPrompt(preset.localPrompt, {
+        overrideAutoMask: preset.localAutoMask ?? "",
+      });
     } else {
       const nextLayers = preset.cloudLayers.map((l, idx) => ({
         ...l,
         id: `preset-${Date.now()}-${idx}`,
         enabled: true,
       })) as PhotoLayer[];
-      // Replace conflicting backdrop if preset sets a backdrop, otherwise append
       const setsBackdrop = nextLayers.some(
         (l) => l.type === "background_replace" || l.type === "cutout",
       );
@@ -469,6 +824,7 @@ export function useStudio() {
       setLocalResultUrl(item.url);
       if (item.prompt) setLocalLastPrompt(item.prompt);
       if (item.localModel) setLocalModel(item.localModel);
+      if (typeof item.seed === "number") setLocalLastSeed(item.seed);
     } else {
       setEngine("cloud");
       if (item.layers) setLayers(item.layers);
@@ -547,19 +903,60 @@ export function useStudio() {
     setLocalModel,
     localResolution,
     setLocalResolution,
+    localStrength,
+    setLocalStrength,
     localAutoMask,
     setLocalAutoMask,
+    localMaskDataUrl,
+    localMaskPreviewUrl,
+    saveLocalBrushMask,
+    clearLocalBrushMask,
+    localReferenceImages,
+    addLocalReferenceFiles,
+    addLocalReferenceFromUrl,
+    removeLocalReferenceImage,
+    clearLocalReferenceImages,
+    localNegativePrompt,
+    setLocalNegativePrompt,
+    localStyleMode,
+    setLocalStyleMode,
+    localLoraPath,
+    setLocalLoraPath,
+    localLoraScale,
+    setLocalLoraScale,
+    localSeed,
+    setLocalSeed,
+    localSeedLocked,
+    setLocalSeedLocked,
+    localLastSeed,
     localEnhancePrompt,
     setLocalEnhancePrompt,
     localVerify,
     setLocalVerify,
+    soundAlertsEnabled,
+    setSoundAlertsEnabled,
+    requestDesktopNotifications,
     localJob,
     localResultUrl,
+    localPreviousResultUrl,
     localLastPrompt,
+    localLastOperation,
     chainLocalEdits,
     setChainLocalEdits,
     runLocalAiPrompt,
+    regenerateLocalEdit,
+    runLocalUpscale,
+    runLocalCutout,
     cancelActiveLocalJob,
+
+    // Auto-saved Local Gallery
+    galleryItems,
+    galleryDir,
+    galleryLoading,
+    refreshGallery,
+    loadGalleryItemIntoStudio,
+    deleteGalleryEntry,
+    openGalleryInFinder,
 
     // Cloud Layers & Settings
     layers,

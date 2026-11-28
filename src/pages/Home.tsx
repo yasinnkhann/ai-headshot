@@ -1,10 +1,13 @@
+import { useState } from "react";
 import { LandingPage } from "../components/LandingPage";
+import { LocalGalleryModal } from "../components/LocalGalleryModal";
 import { PhotoStudio } from "../components/PhotoStudio";
 import { useStudio } from "../hooks/use-studio";
-import { Cpu, RefreshCw, Sparkles } from "lucide-react";
+import { Cpu, Images, RefreshCw, Sparkles } from "lucide-react";
 
 export default function Home() {
   const studio = useStudio();
+  const [galleryOpen, setGalleryOpen] = useState(false);
   const localConnected = Boolean(
     studio.localHealth?.ok && studio.localHealth.mfluxInstalled,
   );
@@ -12,6 +15,11 @@ export default function Home() {
   const handleReset = () => {
     studio.resetStudio();
     window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const handleOpenGallery = () => {
+    setGalleryOpen(true);
+    void studio.refreshGallery();
   };
 
   return (
@@ -32,13 +40,31 @@ export default function Home() {
           </div>
         </button>
 
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2">
+          {/* Persistent Local Studio Library Button */}
+          {localConnected && (
+            <button
+              type="button"
+              onClick={handleOpenGallery}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-500/25 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-200 hover:bg-emerald-500/20 transition cursor-pointer"
+              title="Open auto-saved local studio renders from ~/Pictures/AI-Photo-Studio"
+            >
+              <Images className="h-3.5 w-3.5 text-emerald-400" />
+              <span>Library</span>
+              <span className="rounded-full bg-black/35 px-1.5 py-0.5 text-[10px] font-mono text-emerald-300">
+                {studio.galleryItems.length || studio.localHealth?.galleryCount || 0}
+              </span>
+            </button>
+          )}
+
           {/* Live Local AI Status Indicator */}
           <div
             className="hidden sm:inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-[11px] font-medium text-white/70"
             title={
               localConnected
-                ? "Connected to local Apple Silicon mflux server ($0 unlimited)"
+                ? studio.localHealth?.autoStartInstalled
+                  ? "Connected to local Apple Silicon mflux server (Auto-Start enabled)"
+                  : "Connected to local Apple Silicon mflux server ($0 unlimited)"
                 : "Start 'npm run local-ai' on your Mac for unlimited local AI edits"
             }
           >
@@ -84,6 +110,7 @@ export default function Home() {
           activeResultUrl={studio.activeResultUrl}
           cloudResultUrl={studio.cloudResultUrl}
           localResultUrl={studio.localResultUrl}
+          localPreviousResultUrl={studio.localPreviousResultUrl}
           hasCloudEdits={studio.hasCloudEdits}
           engine={studio.engine}
           onEngineChange={studio.setEngine}
@@ -93,18 +120,50 @@ export default function Home() {
           onLocalModelChange={studio.setLocalModel}
           localResolution={studio.localResolution}
           onLocalResolutionChange={studio.setLocalResolution}
+          localStrength={studio.localStrength}
+          onLocalStrengthChange={studio.setLocalStrength}
           localAutoMask={studio.localAutoMask}
           onLocalAutoMaskChange={studio.setLocalAutoMask}
+          localMaskDataUrl={studio.localMaskDataUrl}
+          localMaskPreviewUrl={studio.localMaskPreviewUrl}
+          onSaveBrushMask={studio.saveLocalBrushMask}
+          onClearBrushMask={studio.clearLocalBrushMask}
+          localReferenceImages={studio.localReferenceImages}
+          onAddReferenceFiles={studio.addLocalReferenceFiles}
+          onRemoveReferenceImage={studio.removeLocalReferenceImage}
+          onClearReferenceImages={studio.clearLocalReferenceImages}
+          localNegativePrompt={studio.localNegativePrompt}
+          onLocalNegativePromptChange={studio.setLocalNegativePrompt}
+          localStyleMode={studio.localStyleMode}
+          onLocalStyleModeChange={studio.setLocalStyleMode}
+          localLoraPath={studio.localLoraPath}
+          onLocalLoraPathChange={studio.setLocalLoraPath}
+          localLoraScale={studio.localLoraScale}
+          onLocalLoraScaleChange={studio.setLocalLoraScale}
+          localSeed={studio.localSeed}
+          onLocalSeedChange={studio.setLocalSeed}
+          localSeedLocked={studio.localSeedLocked}
+          onLocalSeedLockedChange={studio.setLocalSeedLocked}
+          localLastSeed={studio.localLastSeed}
           localEnhancePrompt={studio.localEnhancePrompt}
           onLocalEnhancePromptChange={studio.setLocalEnhancePrompt}
           localVerify={studio.localVerify}
           onLocalVerifyChange={studio.setLocalVerify}
+          soundAlertsEnabled={studio.soundAlertsEnabled}
+          onSoundAlertsEnabledChange={studio.setSoundAlertsEnabled}
+          onRequestDesktopNotifications={studio.requestDesktopNotifications}
           localJob={studio.localJob}
           localLastPrompt={studio.localLastPrompt}
+          localLastOperation={studio.localLastOperation}
           chainLocalEdits={studio.chainLocalEdits}
           onChainLocalEditsChange={studio.setChainLocalEdits}
-          onRunLocalPrompt={studio.runLocalAiPrompt}
+          onRunLocalPrompt={(prompt) => studio.runLocalAiPrompt(prompt)}
+          onRegenerateLocalEdit={studio.regenerateLocalEdit}
+          onRunLocalUpscale={studio.runLocalUpscale}
+          onRunLocalCutout={studio.runLocalCutout}
           onCancelLocalJob={studio.cancelActiveLocalJob}
+          onOpenGallery={handleOpenGallery}
+          galleryCount={studio.galleryItems.length}
           layers={studio.layers}
           estimatedCredits={studio.estimatedCredits}
           onAddLayer={studio.addLayer}
@@ -123,6 +182,26 @@ export default function Home() {
           onAddToHistory={studio.addToHistory}
           onRestoreHistory={studio.restoreHistoryItem}
           onRemoveHistory={studio.removeHistoryItem}
+        />
+      )}
+
+      {galleryOpen && (
+        <LocalGalleryModal
+          items={studio.galleryItems}
+          galleryDir={studio.galleryDir}
+          loading={studio.galleryLoading}
+          canAddAsReference={studio.hasPhoto}
+          onRefresh={studio.refreshGallery}
+          onOpenFolder={studio.openGalleryInFinder}
+          onLoadItem={studio.loadGalleryItemIntoStudio}
+          onAddAsReference={(item) =>
+            studio.addLocalReferenceFromUrl(
+              item.prompt.slice(0, 24) || item.filename,
+              item.imageUrl,
+            )
+          }
+          onDeleteItem={studio.deleteGalleryEntry}
+          onClose={() => setGalleryOpen(false)}
         />
       )}
     </div>

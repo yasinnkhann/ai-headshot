@@ -6,6 +6,16 @@ export type EditEngine = "local" | "cloud";
 
 export type LocalModelId = "flux2-klein-4b" | "qwen-2.1-turbo";
 
+export type LocalOperation = "edit" | "upscale" | "cutout";
+
+export type LocalStyleMode =
+  | ""
+  | "identity"
+  | "portrait"
+  | "cinematic"
+  | "storyboard"
+  | "illustration";
+
 export type ExportFormat = "jpg" | "png" | "webp";
 
 export type AspectRatio = "original" | "4:5" | "1:1" | "16:9" | "9:16" | "3:2";
@@ -140,7 +150,34 @@ export interface EditHistoryItem {
   layers?: PhotoLayer[];
   prompt?: string;
   localModel?: LocalModelId;
+  seed?: number;
   timestamp: number;
+}
+
+export interface LocalReferenceImage {
+  id: string;
+  name: string;
+  dataUrl: string;
+}
+
+export interface LocalGalleryItem {
+  id: string;
+  filename: string;
+  imageUrl: string;
+  createdAt: number;
+  prompt: string;
+  negativePrompt?: string;
+  model: string;
+  operation: LocalOperation;
+  seed?: number;
+  strength?: number;
+  resolution?: number;
+  styleMode?: string;
+  loraPath?: string;
+  autoMask?: string;
+  hadBrushMask?: boolean;
+  referenceCount?: number;
+  elapsed?: number;
 }
 
 export interface LocalModelInfo {
@@ -150,13 +187,21 @@ export interface LocalModelInfo {
   installed: boolean;
   defaultSteps: number;
   supportsAutoMask: boolean;
+  supportsBrushMask?: boolean;
   supportsVerify: boolean;
+  supportsStrength?: boolean;
+  supportsMultiImage?: boolean;
 }
 
 export interface LocalAiHealth {
   ok: boolean;
   mfluxInstalled: boolean;
   models: LocalModelInfo[];
+  upscalerInstalled?: boolean;
+  cutoutInstalled?: boolean;
+  galleryDir?: string;
+  galleryCount?: number;
+  autoStartInstalled?: boolean;
   ollama: {
     connected: boolean;
     models: string[];
@@ -167,10 +212,27 @@ export interface LocalAiHealth {
 export interface LocalEditJobStatus {
   jobId: string;
   status: "queued" | "running" | "done" | "error" | "cancelled";
+  phase?:
+    | "queued"
+    | "preparing"
+    | "download"
+    | "enhancing"
+    | "generating"
+    | "verifying"
+    | "decoding"
+    | "done"
+    | "error"
+    | "cancelled";
   stage: string;
+  progress?: number | null;
+  step?: number | null;
+  totalSteps?: number | null;
+  eta?: string | null;
+  seed?: number | null;
   elapsed: number;
   logs: string[];
   imageDataUrl?: string | null;
+  galleryItem?: LocalGalleryItem | null;
   error?: string | null;
 }
 
