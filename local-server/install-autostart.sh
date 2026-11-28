@@ -1,14 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-LABEL="com.yasinkhan.ai-photo-studio"
+LABEL="com.yasinkhan.alterx-local"
+LEGACY_LABEL="com.yasinkhan.ai-photo-studio"
 PLIST_PATH="$HOME/Library/LaunchAgents/${LABEL}.plist"
+LEGACY_PLIST_PATH="$HOME/Library/LaunchAgents/${LEGACY_LABEL}.plist"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SERVER_PATH="${SCRIPT_DIR}/server.py"
-LOG_DIR="$HOME/Library/Logs/AI-Photo-Studio"
+LOG_DIR="$HOME/Library/Logs/Alterx"
 PYTHON_BIN="$(command -v python3 || echo /opt/homebrew/bin/python3)"
 
 mkdir -p "$HOME/Library/LaunchAgents" "$LOG_DIR"
+
+# Clean up legacy launch daemon if present
+launchctl bootout "gui/$(id -u)/${LEGACY_LABEL}" 2>/dev/null || true
+rm -f "$LEGACY_PLIST_PATH"
 
 cat > "$PLIST_PATH" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -47,5 +53,6 @@ launchctl bootstrap "gui/$(id -u)" "$PLIST_PATH"
 launchctl kickstart -k "gui/$(id -u)/${LABEL}"
 
 echo "✅ Installed and started macOS LaunchAgent: ${LABEL}"
-echo "   Plist: ${PLIST_PATH}"
-echo "   Logs:  ${LOG_DIR}/server.out.log"
+echo "   Server: ${SERVER_PATH}"
+echo "   Plist:  ${PLIST_PATH}"
+echo "   Logs:   ${LOG_DIR}/server.out.log"

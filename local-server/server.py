@@ -40,7 +40,7 @@ for extra in (
     if extra not in os.environ.get("PATH", ""):
         os.environ["PATH"] = f"{extra}:{os.environ.get('PATH', '')}"
 
-TMP_DIR = Path(tempfile.gettempdir()) / "ai-photo-studio-local"
+TMP_DIR = Path(tempfile.gettempdir()) / "alterx-local"
 TMP_DIR.mkdir(parents=True, exist_ok=True)
 
 GALLERY_DIR = Path(
@@ -65,9 +65,10 @@ if LEGACY_GALLERY_DIR.exists() and LEGACY_GALLERY_DIR != GALLERY_DIR:
     except Exception as e:
         print(f"[Alterx Local] Could not migrate legacy gallery images: {e}")
 
-LAUNCH_AGENT_PLIST = (
-    Path.home() / "Library" / "LaunchAgents" / "com.yasinkhan.ai-photo-studio.plist"
-)
+LAUNCH_AGENT_PLISTS = [
+    Path.home() / "Library" / "LaunchAgents" / "com.yasinkhan.alterx-local.plist",
+    Path.home() / "Library" / "LaunchAgents" / "com.yasinkhan.ai-photo-studio.plist",
+]
 
 JOBS: dict[str, dict[str, Any]] = {}
 JOBS_LOCK = threading.Lock()
@@ -145,7 +146,7 @@ def decode_image_source(source: str, dest_path: Path) -> None:
     if source.startswith(("http://", "https://")):
         req = urllib.request.Request(
             source,
-            headers={"User-Agent": "AI-Photo-Studio-Local/2.0"},
+            headers={"User-Agent": "Alterx-Local/2.0"},
         )
         with urllib.request.urlopen(req, timeout=30) as resp:
             dest_path.write_bytes(resp.read())
@@ -770,7 +771,7 @@ class StudioHandler(BaseHTTPRequestHandler):
                     "cutoutInstalled": find_binary("mflux-generate-fibo-edit") is not None,
                     "galleryDir": str(GALLERY_DIR),
                     "galleryCount": count_gallery_items(),
-                    "autoStartInstalled": LAUNCH_AGENT_PLIST.exists(),
+                    "autoStartInstalled": any(p.exists() for p in LAUNCH_AGENT_PLISTS),
                     "ollama": {"connected": ollama_ok, "models": ollama_models},
                     "busy": len(ACTIVE_PROCESSES) > 0,
                 },

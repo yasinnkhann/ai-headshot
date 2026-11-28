@@ -1,49 +1,63 @@
-# ai-headshot
+# Alterx
 
-A Cloudinary React + Vite + TypeScript project scaffolded with [create-cloudinary-react](https://github.com/cloudinary-devs/create-cloudinary-react).
+> **Next-Gen Studio AI Photo & Headshot Engine**  
+> Run unlimited, free, 100% private AI edits locally on Apple Silicon (MLX GPU), or scale seamlessly in the cloud with Cloudinary.
 
-## Prerequisites
+Live Web App: **[alterx.vercel.app](https://alterx.vercel.app)**  
+GitHub: **[github.com/yasinnkhann/alterx](https://github.com/yasinnkhann/alterx)**
 
-- **Node.js** — use a current LTS release. Supported ranges are listed under `engines` in this `package.json`.
+---
 
-## Quick Start
+## Features
+
+- **Dual-Engine Architecture**:
+  - 🍎 **Local Apple Silicon (MLX GPU)**: 100% private, zero cost, runs on-device via FLUX.1 Fill Dev / Schnell.
+  - ☁️ **Cloud Engine (Cloudinary)**: Generative fill, replace, recolor, and smart crop from any browser or mobile device.
+- **Lazy + Remember Connection**: Zero wasteful background probing; auto-reconnects smoothly for returning local users.
+- **Pro Studio Shortcuts**:
+  - `Space` (hold): Peek at original unedited photo.
+  - `⌘ + Enter` / `Ctrl + Enter`: Trigger generation instantly.
+  - `Esc`: Dismiss modals and drawers.
+- **Local Gallery**: Auto-saves rendered creations to `~/Pictures/Alterx`.
+
+---
+
+## Quick Start (Web App)
 
 ```bash
+npm install
 npm run dev
 ```
 
-## Cloudinary Setup
+Visit `http://localhost:5173`.
 
-This project uses Cloudinary for image management. If you don't have a Cloudinary account yet:
+---
 
-- [Sign up for free](https://cld.media/reactregister)
-- Find your cloud name in your [dashboard](https://console.cloudinary.com/app/home/dashboard)
+## Local Mac AI Acceleration (Apple Silicon)
 
-## Environment Variables
+To run FLUX.1 Fill directly on your Mac GPU with $0 API fees and full privacy:
 
-Your `.env` file has been pre-configured with:
+```bash
+# One-line automated quickstart (installs uv + mflux, launches daemon)
+npm run local-ai
+```
 
-- `VITE_CLOUDINARY_CLOUD_NAME`: pedro-machado-inc
-- `VITE_CLOUDINARY_UPLOAD_PRESET`: ai_headshots_unsigned
+Or run in the background on startup:
 
-**Note**: Transformations work without an upload preset (using sample images). Uploads require an unsigned upload preset.
+```bash
+bash local-server/install-autostart.sh
+```
 
-To create an unsigned upload preset:
+To stop:
 
-1. Go to https://console.cloudinary.com/app/settings/upload/presets
-2. Click "Add upload preset"
-3. Set it to "Unsigned" mode
-4. Add the preset name to your `.env` file
-5. **Save** the `.env` file and restart the dev server so the new values load correctly.
+```bash
+bash local-server/uninstall-autostart.sh
+```
 
-## AI Assistant Support
+---
 
-This project includes AI coding rules for your selected AI assistant(s). The rules help AI assistants understand Cloudinary React SDK patterns, common errors, and best practices.
+## Tech Stack
 
-**Try the AI Prompts**: Check out the "🤖 Try Asking Your AI Assistant" section in the app for ready-to-use Cloudinary prompts! Copy and paste them into your AI assistant to get started.
-
-## Learn More
-
-- [Cloudinary React SDK Docs](https://cloudinary.com/documentation/react_integration)
-- [Vite Documentation](https://vite.dev)
-- [React Documentation](https://react.dev)
+- **Frontend**: React 19, Vite, TypeScript, Tailwind CSS, Lucide Icons
+- **Local AI Engine**: Python 3.12+, MLX (`mflux`), FLUX.1 Fill Dev / Schnell
+- **Cloud Infrastructure**: Cloudinary AI Transforms, Vercel Edge Hosting
