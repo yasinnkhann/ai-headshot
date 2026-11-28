@@ -127,7 +127,7 @@ export function LandingPage({
               <div className="mb-5 flex flex-wrap items-center gap-2">
                 <div className="inline-flex items-center gap-2 rounded-full border border-indigo-500/30 bg-indigo-500/10 px-4 py-1.5 text-xs sm:text-sm font-medium text-indigo-300">
                   <Sparkles className="h-4 w-4 text-indigo-400" />
-                  Prompt-Driven AI Photo Studio
+                  Alterx · Prompt-Driven AI Studio
                 </div>
 
                 {localConnected && (
@@ -428,7 +428,7 @@ export function LandingPage({
 
       <footer className="border-t border-white/10 px-6 py-8 text-center text-xs text-white/40">
         <p>
-          AI Photo Studio · Powered by Local Apple Silicon MLX (mflux) &amp; Cloudinary
+          Alterx · Powered by Local Apple Silicon MLX (mflux) &amp; Cloudinary
           Generative AI
         </p>
       </footer>

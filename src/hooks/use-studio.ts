@@ -41,7 +41,7 @@ import {
   startLocalEdit,
 } from "../lib/local-ai";
 
-const DEFAULT_PAGE_TITLE = "AI Photo Studio";
+const DEFAULT_PAGE_TITLE = "Alterx";
 
 export function useStudio() {
   // Base source photo state (supports BOTH Cloudinary uploads AND pure local-only files!)

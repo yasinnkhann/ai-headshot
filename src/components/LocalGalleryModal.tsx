@@ -80,12 +80,12 @@ export function LocalGalleryModal({
             </div>
             <div>
               <h3 className="text-sm font-semibold text-white">
-                Local Studio Library ({items.length} saved)
+                Alterx Library ({items.length} saved)
               </h3>
               <p className="text-[11px] text-white/50 truncate max-w-md">
                 Auto-saved to{" "}
                 <code className="text-emerald-300/90">
-                  {galleryDir || "~/Pictures/AI-Photo-Studio"}
+                  {galleryDir || "~/Pictures/Alterx"}
                 </code>
               </p>
             </div>

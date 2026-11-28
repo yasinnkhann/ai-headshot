@@ -28,14 +28,14 @@ export default function Home() {
         <button
           type="button"
           onClick={studio.hasPhoto ? handleReset : undefined}
-          className="flex items-center gap-2.5 text-left cursor-pointer"
+          className="flex items-center gap-2.5 text-left cursor-pointer group"
         >
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600/20 text-indigo-400 border border-indigo-500/30">
-            <Sparkles className="h-4 w-4" />
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-500/20 to-purple-500/20 text-indigo-400 border border-indigo-500/30 group-hover:border-indigo-400/50 transition">
+            <Sparkles className="h-4 w-4 text-indigo-400 group-hover:rotate-12 transition-transform duration-300" />
           </div>
           <div>
-            <span className="text-base sm:text-lg font-bold tracking-tight">
-              AI <span className="text-indigo-400">Photo Studio</span>
+            <span className="text-base sm:text-lg font-bold tracking-tight text-white">
+              Alter<span className="text-indigo-400">x</span>
             </span>
           </div>
         </button>
@@ -47,7 +47,7 @@ export default function Home() {
               type="button"
               onClick={handleOpenGallery}
               className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-500/25 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-200 hover:bg-emerald-500/20 transition cursor-pointer"
-              title="Open auto-saved local studio renders from ~/Pictures/AI-Photo-Studio"
+              title="Open auto-saved local studio renders from ~/Pictures/Alterx"
             >
               <Images className="h-3.5 w-3.5 text-emerald-400" />
               <span>Library</span>

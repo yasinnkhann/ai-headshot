@@ -195,7 +195,7 @@ export function notifyRenderComplete(label: string): void {
       Notification.permission === "granted" &&
       document.hidden
     ) {
-      new Notification("AI Photo Studio — Render Ready", {
+      new Notification("Alterx — Render Ready", {
         body: label || "Your Apple Silicon GPU edit is complete!",
       });
     }

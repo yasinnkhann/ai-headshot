@@ -45,11 +45,26 @@ TMP_DIR.mkdir(parents=True, exist_ok=True)
 
 GALLERY_DIR = Path(
     os.environ.get(
-        "AI_STUDIO_GALLERY_DIR",
-        str(Path.home() / "Pictures" / "AI-Photo-Studio"),
+        "ALTERX_GALLERY_DIR",
+        os.environ.get(
+            "AI_STUDIO_GALLERY_DIR",
+            str(Path.home() / "Pictures" / "Alterx"),
+        ),
     )
 )
 GALLERY_DIR.mkdir(parents=True, exist_ok=True)
+
+# Automatically migrate legacy photos from AI-Photo-Studio so no user images are lost
+LEGACY_GALLERY_DIR = Path.home() / "Pictures" / "AI-Photo-Studio"
+if LEGACY_GALLERY_DIR.exists() and LEGACY_GALLERY_DIR != GALLERY_DIR:
+    try:
+        import shutil
+        for legacy_file in LEGACY_GALLERY_DIR.glob("*.*"):
+            dest = GALLERY_DIR / legacy_file.name
+            if not dest.exists():
+                shutil.copy2(legacy_file, dest)
+    except Exception as e:
+        logger.warning(f"Could not migrate legacy gallery images: {e}")
 
 LAUNCH_AGENT_PLIST = (
     Path.home() / "Library" / "LaunchAgents" / "com.yasinkhan.ai-photo-studio.plist"
