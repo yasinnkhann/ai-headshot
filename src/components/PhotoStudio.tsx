@@ -19,7 +19,7 @@ import { LinkedInSimulator } from "./LinkedInSimulator";
 import { MicroTuningPanel } from "./MicroTuningPanel";
 import { PortraitFilterBar } from "./PortraitFilterBar";
 import { StudioExportPanel } from "./StudioExportPanel";
-import { CURATED_STUDIO_PRESETS } from "../lib/studio-engine";
+import { CURATED_STUDIO_PRESETS, isCreativeScenePrompt } from "../lib/studio-engine";
 import {
   getMicroTuningCssFilter,
   getVignetteOverlayStyle,
@@ -521,6 +521,9 @@ export function PhotoStudio({
                             imageUrl={cloudResultUrl}
                             alt="Edited result"
                             onReady={handleCloudReady}
+                            onClearLayers={onClearLayers}
+                            onSwitchToLocal={() => onEngineChange("local")}
+                            layerCount={layers.filter((l) => l.enabled).length}
                             className="h-full w-full object-contain rounded-xl"
                             style={{ filter: cssFilter }}
                           />
@@ -949,6 +952,27 @@ export function PhotoStudio({
                         : ""}
                       .
                     </p>
+
+                    {isCreativeScenePrompt(smartPrompt) && (
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs text-emerald-200">
+                        <div className="flex items-center gap-2">
+                          <Cpu className="h-4 w-4 shrink-0 text-emerald-400" />
+                          <span>
+                            💡 Creative fantasy transformation detected. For best results (robes, lightsabers, full-scene art), use <strong>Local Mac AI (Unlimited)</strong>.
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onEngineChange("local");
+                            setLocalPrompt(smartPrompt);
+                          }}
+                          className="shrink-0 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-500 transition cursor-pointer"
+                        >
+                          Switch to Local AI
+                        </button>
+                      </div>
+                    )}
                   </form>
                 )}
 
@@ -1353,6 +1377,16 @@ export function PhotoStudio({
                     </p>
                   ) : (
                     <div className="space-y-1.5">
+                      {layers.filter((l) => l.enabled).length > 3 && (
+                        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-2.5 text-[11px] text-amber-200">
+                          <p className="font-semibold text-amber-300">
+                            ⚠️ Heavy layer stack ({layers.filter((l) => l.enabled).length} active)
+                          </p>
+                          <p className="mt-0.5 text-white/70">
+                            Cloudinary can stall when chaining &gt;3 generative layers. The engine will safely execute the 3 most recent active layers.
+                          </p>
+                        </div>
+                      )}
                       {layers.map((layer) => (
                         <div
                           key={layer.id}

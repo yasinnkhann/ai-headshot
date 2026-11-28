@@ -359,6 +359,96 @@ export function buildOriginalStudioPreview(
   return img.delivery(format(auto())).delivery(quality(autoQuality()));
 }
 
+/**
+ * Sanitizes and orders layers for Cloudinary pipeline execution:
+ * 1. Mutual exclusivity:
+ *    - Cutout vs Background Replace: only the latest one wins.
+ *    - Multiple Background Replaces: only the latest one wins (Cloudinary rejects multiple e_gen_background_replace).
+ *    - Multiple Expands: only the latest one wins.
+ * 2. Invalid inputs:
+ *    - Discard replace operations where `from` is a generic placeholder ("existing object", "object", "item").
+ *    - Discard recolor/remove with empty prompts.
+ * 3. Safe pipeline length:
+ *    - Cloudinary generative AI pipelines become unstable/timeout when chaining >3 generative operations in one URL.
+ *    - Keeps at most the 3 most recent active generative layers to guarantee fast response without stalling.
+ */
+export function sanitizeLayersForCloudinary(layers: PhotoLayer[]): PhotoLayer[] {
+  const enabled = layers.filter((l) => l.enabled);
+  if (enabled.length === 0) return [];
+
+  // Find the last index for single-instance operations
+  let lastBgIdx = -1;
+  let lastExpandIdx = -1;
+  let lastRestoreIdx = -1;
+  let lastUpscaleIdx = -1;
+
+  for (let i = 0; i < enabled.length; i++) {
+    const l = enabled[i];
+    if (l.type === "background_replace" || l.type === "cutout") {
+      lastBgIdx = i;
+    } else if (l.type === "expand") {
+      lastExpandIdx = i;
+    } else if (l.type === "restore") {
+      lastRestoreIdx = i;
+    } else if (l.type === "upscale") {
+      lastUpscaleIdx = i;
+    }
+  }
+
+  const valid: PhotoLayer[] = [];
+  for (let i = 0; i < enabled.length; i++) {
+    const l = enabled[i];
+
+    // Deduplicate single-instance effects (keep only the latest)
+    if (l.type === "background_replace" || l.type === "cutout") {
+      if (i !== lastBgIdx) continue;
+    } else if (l.type === "expand") {
+      if (i !== lastExpandIdx) continue;
+    } else if (l.type === "restore") {
+      if (i !== lastRestoreIdx) continue;
+    } else if (l.type === "upscale") {
+      if (i !== lastUpscaleIdx) continue;
+    } else if (l.type === "replace") {
+      const fromLower = l.from.trim().toLowerCase();
+      // Skip invalid generic placeholder prompts that confuse Cloudinary
+      if (
+        !fromLower ||
+        fromLower === "existing object" ||
+        fromLower === "object" ||
+        fromLower === "item" ||
+        fromLower === "something"
+      ) {
+        continue;
+      }
+      if (!l.to.trim()) continue;
+    } else if (l.type === "recolor") {
+      if (!l.target.trim() || !l.color.trim()) continue;
+    } else if (l.type === "remove") {
+      if (!l.prompt.trim()) continue;
+    }
+
+    valid.push(l);
+  }
+
+  // Cloudinary safe cap: limit to 3 heaviest generative layers (replace, recolor, remove, background_replace, expand)
+  const isHeavyGenerative = (l: PhotoLayer) =>
+    l.type === "background_replace" ||
+    l.type === "replace" ||
+    l.type === "recolor" ||
+    l.type === "remove" ||
+    l.type === "expand";
+
+  const heavyGenerativeLayers = valid.filter(isHeavyGenerative);
+  if (heavyGenerativeLayers.length > 3) {
+    const keepIds = new Set(
+      heavyGenerativeLayers.slice(-3).map((l) => l.id),
+    );
+    return valid.filter((l) => !isHeavyGenerative(l) || keepIds.has(l.id));
+  }
+
+  return valid;
+}
+
 export function buildStudioImage(
   publicId: string,
   layers: PhotoLayer[],
@@ -370,8 +460,9 @@ export function buildStudioImage(
   let hasExpandLayer = false;
   let hasCutoutLayer = false;
 
-  for (const layer of layers) {
-    if (!layer.enabled) continue;
+  const safeLayers = sanitizeLayersForCloudinary(layers);
+
+  for (const layer of safeLayers) {
 
     switch (layer.type) {
       case "remove":
@@ -537,6 +628,46 @@ function makeLayerId(): string {
  * Splits compound commands ("remove the trash can and put me in Tokyo")
  * into structured non-destructive Cloudinary Photoshop layers.
  */
+export function isCreativeScenePrompt(prompt: string): boolean {
+  const p = prompt.toLowerCase();
+  const fantasyKeywords = [
+    "jedi",
+    "sith",
+    "lightsaber",
+    "star wars",
+    "superhero",
+    "spiderman",
+    "batman",
+    "iron man",
+    "superman",
+    "cyborg",
+    "robot",
+    "futuristic",
+    "cyberpunk",
+    "wizard",
+    "witch",
+    "knight",
+    "warrior",
+    "samurai",
+    "ninja",
+    "dragon",
+    "spacesuit",
+    "astronaut",
+    "alien",
+    "anime",
+    "pixar",
+    "disney",
+    "cartoon",
+    "comic book",
+    "vampire",
+    "zombie",
+    "god",
+    "goddess",
+    "cosplay",
+  ];
+  return fantasyKeywords.some((kw) => p.includes(kw));
+}
+
 export function parsePromptToLayers(rawPrompt: string): PhotoLayer[] {
   const trimmed = rawPrompt.trim();
   if (!trimmed) return [];

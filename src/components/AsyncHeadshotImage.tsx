@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { AlertCircle, Clock, Loader2, Sparkles } from "lucide-react";
+import { AlertCircle, Clock, Cpu, Loader2, RotateCcw, Sparkles } from "lucide-react";
 
 interface AsyncHeadshotImageProps {
   imageUrl: string;
@@ -7,6 +7,9 @@ interface AsyncHeadshotImageProps {
   className?: string;
   style?: React.CSSProperties;
   onReady?: () => void;
+  onClearLayers?: () => void;
+  onSwitchToLocal?: () => void;
+  layerCount?: number;
 }
 
 export function AsyncHeadshotImage({
@@ -15,6 +18,9 @@ export function AsyncHeadshotImage({
   className = "",
   style,
   onReady,
+  onClearLayers,
+  onSwitchToLocal,
+  layerCount,
 }: AsyncHeadshotImageProps) {
   const [status, setStatus] = useState<
     "checking" | "processing" | "rate_limited" | "ready" | "error"
@@ -183,6 +189,42 @@ export function AsyncHeadshotImage({
         <Clock className="h-3.5 w-3.5" />
         <span>{elapsed}s elapsed (usually takes 10–25s)</span>
       </div>
+
+      {elapsed >= 25 && (
+        <div className="mt-4 max-w-sm rounded-xl border border-amber-500/30 bg-amber-500/10 p-3.5 text-left text-xs text-amber-200">
+          <p className="font-semibold text-amber-300 flex items-center gap-1.5">
+            <AlertCircle className="h-4 w-4 shrink-0" />
+            Taking longer than usual ({elapsed}s)
+          </p>
+          <p className="mt-1 text-white/70 leading-relaxed text-[11px]">
+            {layerCount && layerCount > 3
+              ? `You have ${layerCount} layers stacked. Chaining multiple generative AI effects (or conflicting backdrops) can cause Cloudinary to hang.`
+              : "Cloudinary may be queuing or struggling with conflicting layer transformations."}
+          </p>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            {onClearLayers && (
+              <button
+                type="button"
+                onClick={onClearLayers}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-red-600/80 hover:bg-red-600 px-3 py-1.5 text-[11px] font-semibold text-white transition cursor-pointer"
+              >
+                <RotateCcw className="h-3 w-3" />
+                Clear Layers
+              </button>
+            )}
+            {onSwitchToLocal && (
+              <button
+                type="button"
+                onClick={onSwitchToLocal}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 px-3 py-1.5 text-[11px] font-semibold text-white transition cursor-pointer"
+              >
+                <Cpu className="h-3 w-3" />
+                Switch to Local Mac AI
+              </button>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

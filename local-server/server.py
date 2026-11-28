@@ -271,18 +271,29 @@ def parse_prompt_with_ollama(prompt: str) -> list[dict[str, Any]] | None:
     if not ollama_ok or not models:
         return None
 
+    lower = prompt.lower()
+    # Fantasy or full-scene prompts should use full-scene Local Mac AI, not surgical micro-layers
+    fantasy_kws = ["jedi", "sith", "lightsaber", "superhero", "cyborg", "anime", "pixar", "warrior", "knight", "robot"]
+    if any(k in lower for k in fantasy_kws):
+        return []
+
     preferred = next((m for m in models if "llama3" in m), models[0])
     system_prompt = (
         "You convert a user's photo editing instruction into a JSON array of Photoshop layers. "
-        "Allowed layer types:\n"
+        "Allowed layer types (MAXIMUM 2 layers):\n"
         '1. {"type":"remove","prompt":"object to erase"}\n'
-        '2. {"type":"replace","from":"existing object","to":"new object"}\n'
-        '3. {"type":"recolor","target":"object","color":"color name or hex"}\n'
+        '2. {"type":"replace","from":"visible clothing or item","to":"new clothing or item"}\n'
+        '3. {"type":"recolor","target":"visible clothing or item","color":"color name or hex"}\n'
         '4. {"type":"background_replace","prompt":"new background scene"}\n'
         '5. {"type":"expand","aspectRatio":"16:9"|"9:16"|"4:5"|"1:1"|"3:2"}\n'
         '6. {"type":"restore"}\n'
         '7. {"type":"upscale"}\n'
         '8. {"type":"cutout"}\n'
+        "CRITICAL RULES:\n"
+        "- NEVER use placeholder words like 'existing object' or 'object'. 'from' MUST be a specific clothing item like 'shirt', 'jacket', 'tie', 'glasses'.\n"
+        "- NEVER invent objects that do not already exist in the photo (no lightsabers, swords, wings).\n"
+        "- NEVER combine 'cutout' and 'background_replace' (they are mutually exclusive).\n"
+        "- Return at most 2 layers.\n"
         "Return ONLY valid JSON array, no markdown, no explanation."
     )
     body = json.dumps(
@@ -307,7 +318,17 @@ def parse_prompt_with_ollama(prompt: str) -> list[dict[str, Any]] | None:
             if isinstance(parsed, dict) and "layers" in parsed:
                 parsed = parsed["layers"]
             if isinstance(parsed, list):
-                return parsed
+                # Clean up any bad placeholders
+                cleaned: list[dict[str, Any]] = []
+                for item in parsed[:3]:
+                    if not isinstance(item, dict):
+                        continue
+                    if item.get("type") == "replace":
+                        f = str(item.get("from", "")).lower().strip()
+                        if not f or f in ("existing object", "object", "item", "something"):
+                            continue
+                    cleaned.append(item)
+                return cleaned
     except Exception:
         return None
     return None

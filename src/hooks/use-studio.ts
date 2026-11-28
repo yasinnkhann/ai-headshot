@@ -204,7 +204,23 @@ export function useStudio() {
       id: `layer-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       enabled: true,
     } as PhotoLayer;
-    setLayers((prev) => [...prev, full]);
+
+    setLayers((prev) => {
+      // Auto-deactivate conflicting layers
+      let next = prev;
+      if (full.type === "background_replace" || full.type === "cutout") {
+        next = next.map((l) =>
+          l.type === "background_replace" || l.type === "cutout"
+            ? { ...l, enabled: false }
+            : l,
+        );
+      } else if (full.type === "expand") {
+        next = next.map((l) =>
+          l.type === "expand" ? { ...l, enabled: false } : l,
+        );
+      }
+      return [...next, full];
+    });
     setEngine("cloud");
   };
 
@@ -237,8 +253,46 @@ export function useStudio() {
     if (parsed.length === 0) {
       parsed = parsePromptToLayers(prompt);
     }
-    if (parsed.length > 0) {
-      setLayers((prev) => [...prev, ...parsed]);
+
+    // Filter out invalid generic placeholder layers
+    const cleanParsed = parsed.filter((l) => {
+      if (l.type === "replace") {
+        const fromLower = l.from.toLowerCase().trim();
+        if (
+          !fromLower ||
+          fromLower === "existing object" ||
+          fromLower === "object" ||
+          fromLower === "item" ||
+          !l.to.trim()
+        ) {
+          return false;
+        }
+      }
+      return true;
+    });
+
+    if (cleanParsed.length > 0) {
+      setLayers((prev) => {
+        const hasBg = cleanParsed.some(
+          (l) => l.type === "background_replace" || l.type === "cutout",
+        );
+        const hasExpand = cleanParsed.some((l) => l.type === "expand");
+
+        let next = prev;
+        if (hasBg) {
+          next = next.map((l) =>
+            l.type === "background_replace" || l.type === "cutout"
+              ? { ...l, enabled: false }
+              : l,
+          );
+        }
+        if (hasExpand) {
+          next = next.map((l) =>
+            l.type === "expand" ? { ...l, enabled: false } : l,
+          );
+        }
+        return [...next, ...cleanParsed];
+      });
     }
   };
 
