@@ -1,10 +1,12 @@
-import { AlertCircle, ImageIcon, Loader2 } from "lucide-react";
-import type { UploadStatus } from "../types";
+import { AlertCircle, ImageIcon, Loader2, Upload } from "lucide-react";
+import type { SamplePhoto, UploadStatus } from "../types";
 import { useDropzone } from "react-dropzone";
 import { cn } from "../lib/utils";
 import { useState } from "react";
 import { uploadImageToCloudinary } from "../cloudinary/upload-direct";
 import type { CloudinaryUploadResult } from "../cloudinary/UploadWidget";
+import { fileToDataUrl } from "../lib/local-ai";
+import { SAMPLE_PHOTOS } from "../lib/studio-engine";
 
 const ACCEPT = {
   "image/jpeg": [".jpg", ".jpeg"],
@@ -18,7 +20,9 @@ interface UploadCardProps {
   onUploadError: (error: Error) => void;
   onUploadStart: () => void;
   onUploadSuccess: (result: CloudinaryUploadResult) => void;
-  onUseSample?: () => void;
+  onLocalOnlyUpload?: (dataUrl: string) => void;
+  onSelectSample?: (sample: SamplePhoto) => void;
+  preferLocalOnly?: boolean;
   compact?: boolean;
 }
 
@@ -28,7 +32,9 @@ export default function UploadCard({
   onUploadError,
   onUploadStart,
   onUploadSuccess,
-  onUseSample,
+  onLocalOnlyUpload,
+  onSelectSample,
+  preferLocalOnly = false,
   compact = false,
 }: UploadCardProps) {
   const [progress, setProgress] = useState(0);
@@ -37,11 +43,24 @@ export default function UploadCard({
     onUploadStart();
     setProgress(0);
     try {
+      // Try Cloudinary so BOTH Cloud Tools and Local AI work seamlessly
       const result = await uploadImageToCloudinary(file, setProgress);
       onUploadSuccess(result);
     } catch (error) {
+      // If Cloudinary fails (or offline) and local handler exists, still open the photo locally!
+      if (onLocalOnlyUpload) {
+        try {
+          const dataUrl = await fileToDataUrl(file);
+          onLocalOnlyUpload(dataUrl);
+          return;
+        } catch {
+          // Fall through to report original error
+        }
+      }
       onUploadError(
-        error instanceof Error ? error : new Error("Upload failed. Check your network or Cloudinary settings."),
+        error instanceof Error
+          ? error
+          : new Error("Upload failed. Check your network or Cloudinary settings."),
       );
     }
   };
@@ -52,7 +71,16 @@ export default function UploadCard({
       return;
     }
 
-    uploadFile(acceptedFiles[0]);
+    const file = acceptedFiles[0];
+    if (preferLocalOnly && onLocalOnlyUpload) {
+      onUploadStart();
+      fileToDataUrl(file)
+        .then(onLocalOnlyUpload)
+        .catch(() => uploadFile(file));
+      return;
+    }
+
+    uploadFile(file);
   };
 
   const { getRootProps, getInputProps, isDragActive, open } = useDropzone({
@@ -65,19 +93,19 @@ export default function UploadCard({
 
   const isUploading = uploadStatus === "uploading";
 
-  const handleUseSample = (e: React.MouseEvent) => {
+  const handleSampleClick = (e: React.MouseEvent, sample: SamplePhoto) => {
     e.stopPropagation();
-    if (onUseSample) {
-      onUseSample();
+    if (onSelectSample) {
+      onSelectSample(sample);
       return;
     }
     onUploadSuccess({
-      public_id: "samples/people/smiling-man",
+      public_id: sample.publicId,
       resource_type: "image",
-      secure_url: "https://res.cloudinary.com/dwbhfydeg/image/upload/samples/people/smiling-man.jpg",
-      url: "http://res.cloudinary.com/dwbhfydeg/image/upload/samples/people/smiling-man.jpg",
-      width: 849,
-      height: 565,
+      secure_url: sample.secureUrl,
+      url: sample.secureUrl,
+      width: sample.width,
+      height: sample.height,
       format: "jpg",
       bytes: 338794,
       created_at: new Date().toISOString(),
@@ -88,25 +116,27 @@ export default function UploadCard({
     <div
       {...getRootProps()}
       className={cn(
-        "glass-card relative flex cursor-pointer flex-col items-center gap-5 p-8 transition border border-white/10 hover:border-indigo-500/40 hover:bg-white/[0.07]",
-        isDragActive && "border-indigo-500 bg-indigo-500/10",
+        "glass-card relative flex cursor-pointer flex-col items-center gap-4 p-7 transition border border-white/10 hover:border-indigo-500/45 hover:bg-white/[0.06]",
+        isDragActive && "border-indigo-500 bg-indigo-500/10 scale-[1.01]",
         isUploading && "pointer-events-none opacity-80",
         compact ? "rounded-2xl" : "p-10",
       )}
     >
       <input {...getInputProps()} />
-      <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-indigo-500/20 text-indigo-400">
+      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-500/20 text-indigo-400 border border-indigo-500/20">
         {isUploading ? (
-          <Loader2 className="h-8 w-8 animate-spin" />
+          <Loader2 className="h-7 w-7 animate-spin" />
         ) : (
-          <ImageIcon className="h-8 w-8" />
+          <ImageIcon className="h-7 w-7" />
         )}
       </div>
 
       <div className="text-center">
-        <p className="text-base font-semibold text-white">Drag & drop your selfie</p>
+        <p className="text-base font-semibold text-white">
+          Drop any photo here to start editing
+        </p>
         <p className="mt-1 text-xs text-white/50">
-          or click to browse · JPG, PNG, or WEBP (up to 10MB)
+          Portraits, products, travel, rooms — JPG, PNG, or WEBP
         </p>
       </div>
 
@@ -115,7 +145,7 @@ export default function UploadCard({
           <div className="h-2 w-full overflow-hidden rounded-full bg-white/10">
             <div
               className="h-full bg-indigo-500 transition-all duration-300"
-              style={{ width: `${Math.max(progress, 5)}%` }}
+              style={{ width: `${Math.max(progress, 8)}%` }}
             />
           </div>
           <p className="text-center text-xs text-white/60">
@@ -125,7 +155,7 @@ export default function UploadCard({
       )}
 
       {!isUploading && (
-        <div className="flex flex-col sm:flex-row items-center gap-3">
+        <div className="flex flex-col items-center gap-3 w-full">
           <button
             type="button"
             onClick={(e) => {
@@ -133,20 +163,29 @@ export default function UploadCard({
               open();
             }}
             className={cn(
-              "inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-6 py-2.5 text-sm font-semibold text-white cursor-pointer shadow-lg shadow-indigo-600/20",
+              "inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-6 py-2.5 text-sm font-semibold text-white cursor-pointer shadow-lg shadow-indigo-600/25",
               "transition hover:bg-indigo-500",
             )}
           >
-            Browse files
+            <Upload className="h-4 w-4" />
+            Choose Photo
           </button>
 
-          <button
-            type="button"
-            onClick={handleUseSample}
-            className="text-xs text-indigo-400 hover:text-indigo-300 underline underline-offset-4 transition cursor-pointer"
-          >
-            ⚡ Try sample selfie
-          </button>
+          <div className="flex flex-wrap items-center justify-center gap-1.5 pt-1">
+            <span className="text-[11px] text-white/40 mr-0.5">
+              Or try a sample:
+            </span>
+            {SAMPLE_PHOTOS.map((sample) => (
+              <button
+                key={sample.id}
+                type="button"
+                onClick={(e) => handleSampleClick(e, sample)}
+                className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-medium text-indigo-300 hover:bg-indigo-500/20 hover:border-indigo-400/40 transition cursor-pointer"
+              >
+                ⚡ {sample.label}
+              </button>
+            ))}
+          </div>
         </div>
       )}
 
@@ -165,15 +204,7 @@ export default function UploadCard({
 
   return (
     <section id="upload" className="px-4 py-12">
-      <div className="mx-auto max-w-2xl">
-        <h2 className="mb-2 text-center text-2xl font-semibold">
-          Upload Your Selfie
-        </h2>
-        <p className="mb-8 text-center text-white/60">
-          Drag, drop, or click to upload your photo
-        </p>
-        {dropzoneContent}
-      </div>
+      <div className="mx-auto max-w-2xl">{dropzoneContent}</div>
     </section>
   );
 }

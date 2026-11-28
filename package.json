@@ -8,6 +8,8 @@
 	},
 	"scripts": {
 		"dev": "vite",
+		"local-ai": "python3 local-server/server.py",
+		"studio:local": "python3 local-server/server.py & vite",
 		"build": "tsc -b && vite build",
 		"lint": "eslint .",
 		"preview": "vite preview"

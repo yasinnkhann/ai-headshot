@@ -12,51 +12,69 @@ export interface MicroTuningPreset {
 export const MICRO_TUNING_PRESETS: MicroTuningPreset[] = [
   {
     id: "natural",
-    label: "Natural (Raw)",
+    label: "Natural",
     icon: "🌱",
-    description: "Default natural lighting with zero retouching",
+    description: "Default neutral lighting with zero adjustments",
     settings: { ...DEFAULT_MICRO_TUNING },
   },
   {
     id: "executive-glow",
-    label: "Executive Glow",
+    label: "Studio Polish",
     icon: "✨",
-    description: "Subtle skin softening, eye catchlights, and gentle studio contrast",
+    description: "Subtle skin softening, eye catchlights, and balanced studio contrast",
     settings: {
-      skinSoftening: 30,
-      warmth: 8,
-      exposure: 6,
-      contrast: 12,
-      vignette: 20,
-      eyeClarity: 35,
+      skinSoftening: 25,
+      warmth: 6,
+      exposure: 5,
+      contrast: 10,
+      saturation: 6,
+      vignette: 18,
+      eyeClarity: 30,
     },
   },
   {
     id: "golden-hour",
-    label: "Golden Hour Warmth",
+    label: "Golden Hour",
     icon: "🌅",
-    description: "Warm amber sunlight, softened skin, and radiant portrait tones",
+    description: "Warm amber sunlight with rich golden tones",
     settings: {
-      skinSoftening: 40,
+      skinSoftening: 30,
       warmth: 35,
-      exposure: 8,
+      exposure: 6,
       contrast: 8,
-      vignette: 25,
-      eyeClarity: 25,
+      saturation: 15,
+      vignette: 22,
+      eyeClarity: 20,
     },
   },
   {
     id: "moody-editorial",
     label: "Moody Editorial",
     icon: "🕶️",
-    description: "Cooler daylight tones, high-impact eye clarity, and dramatic vignette",
+    description: "Cooler film tones, sharp clarity, and dramatic vignette",
     settings: {
-      skinSoftening: 15,
+      skinSoftening: 10,
       warmth: -18,
       exposure: -4,
-      contrast: 24,
+      contrast: 22,
+      saturation: -12,
       vignette: 45,
-      eyeClarity: 45,
+      eyeClarity: 40,
+    },
+  },
+  {
+    id: "crisp-bw",
+    label: "Noir B&W",
+    icon: "🎞️",
+    description: "High-contrast Leica-style monochrome look",
+    settings: {
+      skinSoftening: 10,
+      warmth: 0,
+      exposure: 2,
+      contrast: 26,
+      saturation: -100,
+      vignette: 35,
+      eyeClarity: 35,
     },
   },
 ];
@@ -67,6 +85,7 @@ export function hasActiveMicroTuning(settings: MicroTuningSettings): boolean {
     settings.warmth !== 0 ||
     settings.exposure !== 0 ||
     settings.contrast !== 0 ||
+    settings.saturation !== 0 ||
     settings.vignette !== 0 ||
     settings.eyeClarity !== 0
   );
@@ -77,7 +96,9 @@ export function getMicroTuningCssFilter(settings: MicroTuningSettings): string {
   const contrastVal = 1 + (settings.contrast + settings.eyeClarity * 0.15) / 100;
   const warmthSepia = settings.warmth > 0 ? settings.warmth * 0.005 : 0;
   const warmthHue = settings.warmth < 0 ? settings.warmth * 0.35 : 0;
-  const saturateVal = 1 + (settings.warmth > 0 ? settings.warmth * 0.004 : 0);
+  const rawSaturation =
+    1 + settings.saturation / 100 + (settings.warmth > 0 ? settings.warmth * 0.003 : 0);
+  const saturateVal = Math.max(0, rawSaturation);
 
   const filters: string[] = [
     `brightness(${brightnessVal.toFixed(3)})`,
@@ -111,7 +132,7 @@ export function getVignetteOverlayStyle(
 }
 
 /**
- * Applies the micro-tuning filter adjustments and vignette onto a canvas
+ * Applies vignette onto a 2D canvas after ctx.filter + drawImage
  */
 export function applyMicroTuningToCanvas(
   ctx: CanvasRenderingContext2D,
@@ -121,7 +142,6 @@ export function applyMicroTuningToCanvas(
 ) {
   if (!hasActiveMicroTuning(settings)) return;
 
-  // Vignette pass
   if (settings.vignette > 0) {
     const opacity = settings.vignette * 0.0075;
     const gradient = ctx.createRadialGradient(

@@ -2,25 +2,33 @@ import {
   Sparkles,
   ShieldCheck,
   Zap,
-  Camera,
-  Shirt,
-  Palette,
-  Maximize2,
+  Infinity as InfinityIcon,
+  Wand2,
+  Layers,
+  SlidersHorizontal,
   ArrowRight,
+  Cpu,
 } from "lucide-react";
 import UploadCard from "./UploadCard";
 import { BeforeAfterSlider } from "./BeforeAfterSlider";
-import type { UploadStatus } from "../types";
+import type {
+  LocalAiHealth,
+  SamplePhoto,
+  StudioPreset,
+  UploadStatus,
+} from "../types";
 import type { CloudinaryUploadResult } from "../cloudinary/UploadWidget";
+import { CURATED_STUDIO_PRESETS, SAMPLE_PHOTOS } from "../lib/studio-engine";
 
 interface LandingPageProps {
   uploadStatus: UploadStatus;
   uploadError: string | null;
+  localHealth: LocalAiHealth | null;
   onUploadError: (error: Error) => void;
   onUploadStart: () => void;
   onUploadSuccess: (result: CloudinaryUploadResult) => void;
-  onUseSample: () => void;
-  onTryPreset: (presetId: string) => void;
+  onLocalOnlyUpload: (dataUrl: string) => void;
+  onSelectSample: (sample: SamplePhoto, preset?: StudioPreset) => void;
 }
 
 const SAMPLE_BEFORE_URL =
@@ -28,83 +36,122 @@ const SAMPLE_BEFORE_URL =
 const SAMPLE_AFTER_URL =
   "https://res.cloudinary.com/dwbhfydeg/image/upload/e_gen_background_replace:prompt_modern%20corporate%20executive%20office%20with%20bookshelves%20and%20professional%20soft%20portrait%20lighting%20bokeh/c_fill,w_600,h_750,g_auto/f_auto/q_auto/samples/people/smiling-man.jpg";
 
-const FEATURED_STYLES = [
+interface ShowcaseCardItem {
+  id: string;
+  title: string;
+  tagline: string;
+  badge: string;
+  imageUrl: string;
+  sampleId: string;
+  presetId: string;
+}
+
+const SHOWCASE_CARDS: ShowcaseCardItem[] = [
   {
-    id: "corporate-executive",
-    name: "Corporate Executive",
-    tagline: "Modern office with bookshelf & soft key light bokeh",
-    badge: "Executive",
-    imageUrl:
-      "https://res.cloudinary.com/dwbhfydeg/image/upload/e_gen_background_replace:prompt_modern%20corporate%20executive%20office%20with%20bookshelves%20and%20professional%20soft%20portrait%20lighting%20bokeh/c_fill,w_600,h_750,g_auto/f_auto/q_auto/samples/people/smiling-man.jpg",
+    id: "scene-swap",
+    title: "Swap Any Scene",
+    tagline: "Transport portraits or objects into executive offices, Tokyo nights, or beaches",
+    badge: "Backdrop AI",
+    imageUrl: SAMPLE_AFTER_URL,
+    sampleId: "portrait-man",
+    presetId: "corporate-executive",
   },
   {
-    id: "studio-minimal",
-    name: "Studio Minimalist",
-    tagline: "Neutral grey studio backdrop with crisp rim light",
-    badge: "Studio",
+    id: "object-replace",
+    title: "Replace Objects & Outfits",
+    tagline: "Swap shirts to blazers, furniture, or props while locking facial identity",
+    badge: "Replace AI",
     imageUrl:
       "https://res.cloudinary.com/dwbhfydeg/image/upload/e_gen_background_replace:prompt_minimalist%20neutral%20grey%20photo%20studio%20backdrop%20soft%20rim%20lighting/c_fill,w_600,h_750,g_auto/f_auto/q_auto/samples/people/smiling-man.jpg",
+    sampleId: "portrait-man",
+    presetId: "executive-blazer",
   },
   {
-    id: "outdoor-professional",
-    name: "Outdoor Professional",
-    tagline: "Natural golden hour sunlight with lush garden bokeh",
-    badge: "Natural",
+    id: "product-studio",
+    title: "Commercial Product Studio",
+    tagline: "Turn casual product snapshots into luxury marble or obsidian studio shots",
+    badge: "Product AI",
     imageUrl:
-      "https://res.cloudinary.com/dwbhfydeg/image/upload/e_gen_background_replace:prompt_outdoor%20garden%20with%20trees%20golden%20hour%20sunlight%20natural%20bokeh/c_fill,w_600,h_750,g_auto/f_auto/q_auto/samples/people/smiling-man.jpg",
+      "https://res.cloudinary.com/dwbhfydeg/image/upload/c_fill,w_600,h_750,g_auto/f_auto/q_auto/samples/ecommerce/shoes.png",
+    sampleId: "product-shoe",
+    presetId: "obsidian-pedestal",
   },
   {
-    id: "urban-business",
-    name: "Urban Business",
-    tagline: "City skyline architectural depth with soft street bokeh",
-    badge: "Urban",
+    id: "magic-expand",
+    title: "Magic Expand & Eraser",
+    tagline: "Outpaint cropped shots to 16:9 widescreen or erase unwanted photobombers",
+    badge: "Photoshop AI",
     imageUrl:
-      "https://res.cloudinary.com/dwbhfydeg/image/upload/e_gen_background_replace:prompt_modern%20city%20skyline%20architectural%20depth%20soft%20street%20bokeh%20business%20district/c_fill,w_600,h_750,g_auto/f_auto/q_auto/samples/people/smiling-man.jpg",
+      "https://res.cloudinary.com/dwbhfydeg/image/upload/c_fill,w_600,h_750,g_auto/f_auto/q_auto/samples/people/bicycle.jpg",
+    sampleId: "street-bike",
+    presetId: "magic-expand-16-9",
   },
 ];
 
 export function LandingPage({
   uploadStatus,
   uploadError,
+  localHealth,
   onUploadError,
   onUploadStart,
   onUploadSuccess,
-  onUseSample,
-  onTryPreset,
+  onLocalOnlyUpload,
+  onSelectSample,
 }: LandingPageProps) {
   const scrollToUpload = () => {
-    document.getElementById("upload-dropzone")?.scrollIntoView({ behavior: "smooth" });
+    document
+      .getElementById("upload-dropzone")
+      ?.scrollIntoView({ behavior: "smooth" });
   };
+
+  const handleTryCard = (card: ShowcaseCardItem) => {
+    const sample =
+      SAMPLE_PHOTOS.find((s) => s.id === card.sampleId) || SAMPLE_PHOTOS[0];
+    const preset = CURATED_STUDIO_PRESETS.find((p) => p.id === card.presetId);
+    onSelectSample(sample, preset);
+  };
+
+  const localConnected = Boolean(localHealth?.ok && localHealth.mfluxInstalled);
 
   return (
     <div className="relative overflow-hidden">
       {/* Background radial glow */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-[600px] bg-[radial-gradient(ellipse_at_top,rgba(99,102,241,0.22),transparent_70%)]" />
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-[620px] bg-[radial-gradient(ellipse_at_top,rgba(99,102,241,0.22),transparent_70%)]" />
 
       {/* HERO SECTION */}
-      <section className="relative px-4 pt-10 pb-16 md:pt-16 md:pb-24">
+      <section className="relative px-4 pt-10 pb-16 md:pt-14 md:pb-24">
         <div className="mx-auto max-w-7xl">
           <div className="grid grid-cols-1 items-center gap-12 lg:grid-cols-12 lg:gap-14">
-            {/* Left Column: Value Prop & Compact Upload */}
+            {/* Left Column: Value Prop + Embedded Upload */}
             <div className="lg:col-span-7">
-              <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-indigo-500/30 bg-indigo-500/10 px-4 py-1.5 text-xs sm:text-sm font-medium text-indigo-300">
-                <Sparkles className="h-4 w-4 text-indigo-400" />
-                AI-Powered Professional Headshots
+              <div className="mb-5 flex flex-wrap items-center gap-2">
+                <div className="inline-flex items-center gap-2 rounded-full border border-indigo-500/30 bg-indigo-500/10 px-4 py-1.5 text-xs sm:text-sm font-medium text-indigo-300">
+                  <Sparkles className="h-4 w-4 text-indigo-400" />
+                  Prompt-Driven AI Photo Studio
+                </div>
+
+                {localConnected && (
+                  <div className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-300">
+                    <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+                    <Cpu className="h-3.5 w-3.5" />
+                    Mac Local AI Ready (Unlimited)
+                  </div>
+                )}
               </div>
 
               <h1 className="mb-5 text-4xl font-extrabold tracking-tight sm:text-5xl lg:text-6xl">
-                Generate Studio-Quality{" "}
-                <span className="gradient-text">AI Headshots</span>
-                <br className="hidden sm:inline" />
-                From Any Selfie
+                Upload Any Photo.{" "}
+                <span className="gradient-text">Tell AI to Make It</span>{" "}
+                Anything.
               </h1>
 
               <p className="mb-8 max-w-2xl text-base text-white/70 sm:text-lg">
-                Turn casual smartphone selfies into polished executive portraits for LinkedIn, resumes,
-                and company websites. Swap outfits, adjust lighting, and change backdrops in seconds.
+                Your personal, uncapped Photoshop studio. Swap scenes, replace objects,
+                erase distractions, recolor anything, or run unlimited free Apple Silicon
+                AI edits directly on your Mac with zero ChatGPT limits.
               </p>
 
-              {/* Integrated Dropzone Box */}
+              {/* Embedded Upload Dropzone */}
               <div id="upload-dropzone" className="max-w-xl">
                 <UploadCard
                   uploadStatus={uploadStatus}
@@ -112,24 +159,25 @@ export function LandingPage({
                   onUploadError={onUploadError}
                   onUploadStart={onUploadStart}
                   onUploadSuccess={onUploadSuccess}
-                  onUseSample={onUseSample}
+                  onLocalOnlyUpload={onLocalOnlyUpload}
+                  onSelectSample={(sample) => onSelectSample(sample)}
                   compact={true}
                 />
               </div>
 
-              {/* Trust & Guarantee Badges */}
+              {/* Trust Badges */}
               <div className="mt-6 flex flex-wrap items-center gap-6 text-xs text-white/60">
                 <div className="flex items-center gap-1.5">
-                  <ShieldCheck className="h-4 w-4 text-emerald-400" />
-                  <span>100% Private & Secure</span>
+                  <InfinityIcon className="h-4 w-4 text-emerald-400" />
+                  <span>Unlimited Local Mac AI ($0)</span>
                 </div>
                 <div className="flex items-center gap-1.5">
                   <Zap className="h-4 w-4 text-indigo-400" />
-                  <span>Generates in ~10 seconds</span>
+                  <span>7 Surgical Cloud Photoshop Tools</span>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <Camera className="h-4 w-4 text-sky-400" />
-                  <span>4K High-Res Export</span>
+                  <ShieldCheck className="h-4 w-4 text-sky-400" />
+                  <span>Zero Subscriptions or Credit Cards</span>
                 </div>
               </div>
             </div>
@@ -141,7 +189,7 @@ export function LandingPage({
                   <div className="flex items-center gap-2">
                     <Sparkles className="h-4 w-4 text-indigo-400" />
                     <span className="text-xs sm:text-sm font-semibold text-white/90">
-                      Live AI Transformation
+                      Identity-Locked AI Editing
                     </span>
                   </div>
                   <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-[11px] font-medium text-emerald-400 border border-emerald-500/20">
@@ -150,23 +198,25 @@ export function LandingPage({
                   </span>
                 </div>
 
-                {/* Comparison Slider */}
                 <BeforeAfterSlider
                   beforeImageUrl={SAMPLE_BEFORE_URL}
                   afterImageUrl={SAMPLE_AFTER_URL}
-                  beforeAlt="Original casual selfie"
-                  afterAlt="AI enhanced corporate headshot"
+                  beforeAlt="Original photo"
+                  afterAlt="AI transformed scene"
                   className="rounded-xl"
                 />
 
                 <div className="mt-3 flex items-center justify-between px-1 text-xs text-white/60">
                   <span>↔ Drag slider to compare</span>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5">
                     <span className="rounded bg-white/10 px-1.5 py-0.5 text-[10px] text-white/80">
-                      👔 Executive Suit
+                      🪄 Replace
                     </span>
                     <span className="rounded bg-white/10 px-1.5 py-0.5 text-[10px] text-white/80">
-                      🏢 Office Bokeh
+                      🧹 Erase
+                    </span>
+                    <span className="rounded bg-white/10 px-1.5 py-0.5 text-[10px] text-white/80">
+                      🖼️ Restyle
                     </span>
                   </div>
                 </div>
@@ -176,57 +226,57 @@ export function LandingPage({
         </div>
       </section>
 
-      {/* POPULAR STYLES SHOWCASE */}
+      {/* CAPABILITIES SHOWCASE */}
       <section className="border-t border-white/10 bg-white/[0.015] px-4 py-16 md:py-24">
         <div className="mx-auto max-w-7xl">
           <div className="mb-12 text-center">
             <div className="mb-3 inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-indigo-400">
-              <Sparkles className="h-3.5 w-3.5" />
-              Tailored Lighting & Environments
+              <Wand2 className="h-3.5 w-3.5" />
+              Not Just Headshots — Edit Anything
             </div>
             <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">
-              Explore Popular Headshot Styles
+              Explore What You Can Create
             </h2>
             <p className="mx-auto mt-3 max-w-2xl text-sm sm:text-base text-white/60">
-              Choose from executive boardrooms, clean studio backdrops, and natural golden hour lighting
-              calibrated for high-impact professional profiles.
+              Jump straight into the studio with any sample photo below to test layered
+              Photoshop edits or unlimited local Apple Silicon transformations.
             </p>
           </div>
 
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
-            {FEATURED_STYLES.map((style) => (
+            {SHOWCASE_CARDS.map((card) => (
               <div
-                key={style.id}
+                key={card.id}
                 className="glass-card group overflow-hidden border border-white/10 transition-all duration-300 hover:border-indigo-500/50 hover:shadow-xl hover:shadow-indigo-500/10 flex flex-col"
               >
                 <div className="relative aspect-[4/5] overflow-hidden bg-black/40">
                   <img
-                    src={style.imageUrl}
-                    alt={style.name}
+                    src={card.imageUrl}
+                    alt={card.title}
                     className="h-full w-full object-cover transition duration-500 group-hover:scale-105"
                     loading="lazy"
                   />
                   <div className="absolute top-3 left-3 rounded-full bg-black/70 px-2.5 py-0.5 text-[11px] font-medium text-white/90 backdrop-blur-md border border-white/10">
-                    {style.badge}
+                    {card.badge}
                   </div>
                 </div>
 
                 <div className="p-4 flex flex-col flex-1 justify-between">
                   <div>
                     <h3 className="text-base font-semibold text-white group-hover:text-indigo-300 transition">
-                      {style.name}
+                      {card.title}
                     </h3>
                     <p className="mt-1 text-xs text-white/60 line-clamp-2">
-                      {style.tagline}
+                      {card.tagline}
                     </p>
                   </div>
 
                   <button
                     type="button"
-                    onClick={() => onTryPreset(style.id)}
+                    onClick={() => handleTryCard(card)}
                     className="mt-4 inline-flex items-center justify-center gap-1.5 rounded-lg bg-white/5 py-2 px-3 text-xs font-semibold text-white/90 hover:bg-indigo-600 hover:text-white transition cursor-pointer border border-white/10 hover:border-transparent"
                   >
-                    <span>Try this style</span>
+                    <span>Try this edit</span>
                     <ArrowRight className="h-3.5 w-3.5" />
                   </button>
                 </div>
@@ -236,65 +286,71 @@ export function LandingPage({
         </div>
       </section>
 
-      {/* STUDIO CAPABILITIES & FEATURES */}
+      {/* 3-PILLAR FEATURE SPOTLIGHT */}
       <section className="border-t border-white/10 px-4 py-16 md:py-24">
         <div className="mx-auto max-w-7xl">
           <div className="mb-14 text-center">
             <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">
-              Everything You Need for the Perfect Portrait
+              Two Powerful AI Engines, One Seamless Canvas
             </h2>
             <p className="mx-auto mt-3 max-w-2xl text-sm sm:text-base text-white/60">
-              Powered by Cloudinary Generative AI to deliver natural reflections, true-to-life lighting,
-              and photorealistic wardrobe transitions.
+              Switch effortlessly between unlimited local Apple Silicon AI on your Mac and
+              fast cloud Photoshop layers that work from anywhere.
             </p>
           </div>
 
           <div className="grid grid-cols-1 gap-8 md:grid-cols-3">
-            {/* Feature 1 */}
-            <div className="glass-card p-8 border border-white/10 transition hover:border-indigo-500/30">
-              <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-xl bg-indigo-500/20 text-indigo-400">
-                <Shirt className="h-6 w-6" />
+            <div className="glass-card p-8 border border-white/10 transition hover:border-emerald-500/30">
+              <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-400">
+                <Cpu className="h-6 w-6" />
               </div>
-              <h3 className="mb-2 text-lg font-semibold text-white">AI Wardrobe & Outfit Studio</h3>
+              <h3 className="mb-2 text-lg font-semibold text-white">
+                Unlimited Local Mac AI (mflux)
+              </h3>
               <p className="text-sm text-white/60 leading-relaxed">
-                Swap your casual t-shirt into a charcoal wool blazer, a formal navy suit and silk tie,
-                or a sleek tech turtleneck without ever changing clothes.
+                Run FLUX.2 Klein 4B or Qwen Image 2.1 Turbo with built-in Auto-Masking
+                directly on your Apple Silicon GPU. Zero subscriptions, zero daily limits,
+                and multi-turn conversational editing.
               </p>
             </div>
 
-            {/* Feature 2 */}
             <div className="glass-card p-8 border border-white/10 transition hover:border-indigo-500/30">
               <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-xl bg-indigo-500/20 text-indigo-400">
-                <Palette className="h-6 w-6" />
+                <Layers className="h-6 w-6" />
               </div>
-              <h3 className="mb-2 text-lg font-semibold text-white">Custom Backdrop Studio</h3>
+              <h3 className="mb-2 text-lg font-semibold text-white">
+                Non-Destructive Cloud Layers
+              </h3>
               <p className="text-sm text-white/60 leading-relaxed">
-                Choose from curated studio presets or describe any environment you want. Our generative
-                background replace engine handles depth of field and rim lighting automatically.
+                Stack Magic Eraser, Object Replace, Recolor, Background Swap, AI Restore,
+                Transparent Cutout, and 16:9 Magic Expand as toggleable layers that leave
+                untouched face pixels 100% real.
               </p>
             </div>
 
-            {/* Feature 3 */}
-            <div className="glass-card p-8 border border-white/10 transition hover:border-indigo-500/30">
-              <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-xl bg-indigo-500/20 text-indigo-400">
-                <Maximize2 className="h-6 w-6" />
+            <div className="glass-card p-8 border border-white/10 transition hover:border-sky-500/30">
+              <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-xl bg-sky-500/15 text-sky-400">
+                <SlidersHorizontal className="h-6 w-6" />
               </div>
-              <h3 className="mb-2 text-lg font-semibold text-white">LinkedIn & Resume Ready</h3>
+              <h3 className="mb-2 text-lg font-semibold text-white">
+                Real-Time 60fps Grading & Export
+              </h3>
               <p className="text-sm text-white/60 leading-relaxed">
-                One-click toggle between 1:1 square for LinkedIn profile avatars and 4:5 portrait for
-                resumes, with subtle retouch filters and direct clipboard copying.
+                Fine-tune exposure, temperature, saturation, contrast, clarity, and
+                vignette at 60fps in the browser, then export pixel-accurate PNG, JPG, or
+                WEBP straight to disk or clipboard.
               </p>
             </div>
           </div>
         </div>
       </section>
 
-      {/* HOW IT WORKS (3 STEPS) */}
+      {/* 3-STEP HOW IT WORKS */}
       <section className="border-t border-white/10 bg-white/[0.015] px-4 py-16 md:py-20">
         <div className="mx-auto max-w-5xl">
           <div className="mb-12 text-center">
             <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">
-              Three Simple Steps to Your New Headshot
+              From Raw Photo to Finished Edit in 3 Steps
             </h2>
           </div>
 
@@ -303,9 +359,9 @@ export function LandingPage({
               <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-indigo-600/20 border border-indigo-500/30 text-indigo-400 font-bold text-lg">
                 1
               </div>
-              <h3 className="text-base font-semibold text-white">Upload Your Selfie</h3>
+              <h3 className="text-base font-semibold text-white">Drop Any Photo</h3>
               <p className="mt-1 text-xs sm:text-sm text-white/60">
-                Pick a clear, front-facing photo from your smartphone or computer.
+                Portraits, products, rooms, pets, or travel snapshots — anything goes.
               </p>
             </div>
 
@@ -313,9 +369,10 @@ export function LandingPage({
               <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-indigo-600/20 border border-indigo-500/30 text-indigo-400 font-bold text-lg">
                 2
               </div>
-              <h3 className="text-base font-semibold text-white">Select Style & Attire</h3>
+              <h3 className="text-base font-semibold text-white">Describe Your Vision</h3>
               <p className="mt-1 text-xs sm:text-sm text-white/60">
-                Choose from studio lighting, outdoor bokeh, and executive wardrobe options.
+                Type plain English edits, target specific objects with Auto-Mask, or stack
+                non-destructive layers.
               </p>
             </div>
 
@@ -323,16 +380,17 @@ export function LandingPage({
               <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-indigo-600/20 border border-indigo-500/30 text-indigo-400 font-bold text-lg">
                 3
               </div>
-              <h3 className="text-base font-semibold text-white">Export & Download</h3>
+              <h3 className="text-base font-semibold text-white">Grade & Export</h3>
               <p className="mt-1 text-xs sm:text-sm text-white/60">
-                Get high-resolution headshots sized perfectly for LinkedIn, resumes, and web.
+                Compare before & after, dial in 60fps light and color, and download or
+                copy in one click.
               </p>
             </div>
           </div>
         </div>
       </section>
 
-      {/* BOTTOM CTA BANNER */}
+      {/* BOTTOM CTA */}
       <section className="border-t border-white/10 px-4 py-16 md:py-20">
         <div className="mx-auto max-w-4xl">
           <div className="glass-card relative overflow-hidden p-8 sm:p-12 text-center border border-indigo-500/30 bg-gradient-to-b from-indigo-950/30 to-black/40">
@@ -340,11 +398,10 @@ export function LandingPage({
             <div className="pointer-events-none absolute -bottom-24 -right-24 h-48 w-48 rounded-full bg-indigo-500/20 blur-3xl" />
 
             <h2 className="text-2xl sm:text-4xl font-bold tracking-tight text-white">
-              Ready to Upgrade Your Professional Image?
+              Ready to Edit Without Limits?
             </h2>
             <p className="mx-auto mt-3 max-w-xl text-sm sm:text-base text-white/70">
-              No expensive photographer or studio rental required. Generate your polished AI headshots
-              right now in under a minute.
+              Upload your photo now or open a sample shot to explore the full studio.
             </p>
 
             <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-4">
@@ -353,13 +410,13 @@ export function LandingPage({
                 onClick={scrollToUpload}
                 className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-8 py-3.5 text-sm font-semibold text-white hover:bg-indigo-500 transition shadow-lg shadow-indigo-600/25 cursor-pointer"
               >
-                Upload Your Selfie
+                Open Photo in Studio
                 <ArrowRight className="h-4 w-4" />
               </button>
 
               <button
                 type="button"
-                onClick={onUseSample}
+                onClick={() => onSelectSample(SAMPLE_PHOTOS[0])}
                 className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-white/10 px-6 py-3.5 text-sm font-medium text-white hover:bg-white/15 transition cursor-pointer border border-white/10"
               >
                 ⚡ Try With Sample Photo
@@ -369,9 +426,11 @@ export function LandingPage({
         </div>
       </section>
 
-      {/* FOOTER */}
       <footer className="border-t border-white/10 px-6 py-8 text-center text-xs text-white/40">
-        <p>AI Headshot · Studio-Quality Portraits Powered by Cloudinary Generative AI</p>
+        <p>
+          AI Photo Studio · Powered by Local Apple Silicon MLX (mflux) &amp; Cloudinary
+          Generative AI
+        </p>
       </footer>
     </div>
   );
